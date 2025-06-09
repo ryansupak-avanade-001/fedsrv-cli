@@ -1,0 +1,13 @@
+{
+  "mcp": {
+    "grok-ai-config": {
+      "api_key": "<Your xAI API Key>",
+      "endpoint": "https://api.x.ai/v1",
+      "model": "grok-3"
+    },
+    "mcp-service-config": {
+      "api_key": "<Your MCP API Key>",
+      "endpoint": "<Your MCP Endpoint>"
+    }
+  }
+}
