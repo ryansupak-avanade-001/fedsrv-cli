@@ -1,2 +1,6 @@
 # fedsrv-cli
-Command Line Interface for fedsrv.
+
+Initially this only contains the commands:
+
+help
+fedsrv-mcp-main
