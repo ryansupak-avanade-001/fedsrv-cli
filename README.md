@@ -35,7 +35,7 @@
   - Anything typed in, when inside this mode, is treated as text sent directly to the MCP Service. Therefore Natural Language should be used.
   - `exit` and `back` are reserved words. If either is entered by itself, `fedsrv-mcp-main` will be exited.
       - *Special Case:* To "escape" either of these words, thereby using just one of them, alone, as a single-word command intended for the MCP service, wrap them in Single or Double Quotes. This will likely be rare.
-  - **Usage Example**:
+  - *Usage Example*:
     ```bash
     fedsrv-cli> mcp
 
