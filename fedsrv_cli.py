@@ -8,14 +8,14 @@ from colorama import Fore, Style
 colorama.init()
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
-VERSION = "v0.1"
+VERSION = "0.1"
 
 SPLASH = r"""
-   ____       ______             _______   ____
-  / __/__ ___/ / __/____  ______/ ___/ /  /  _/
- / _// -_) _  /\ \/ __/ |/ /___/ /__/ /___/ /  
-/_/  \__/\_,_/___/_/  |___/    \___/____/___/  
-                                     version 0.1
+   ____       ______            _______   ____
+  / __/__ ___/ / __/____  _____/ ___/ /  /  _/
+ / _// -_) _  /\ \/ __/ |/ /__/ /__/ /___/ /  
+/_/  \__/\_,_/___/_/  |___/   \___/____/___/  
+                                    version 0.1
 """
 
 def load_config():
@@ -43,8 +43,9 @@ def test_connection(config, name, headers, endpoint, test_payload=None):
 @click.command()
 def fedsrv_cli():
     """A CLI for interacting with FedSrv MCP Service."""
-    # Display green ASCII splash with plain version text
-    click.echo(f"{Fore.GREEN}{Style.BRIGHT}{SPLASH}{Style.RESET_ALL}")
+    # Display green ASCII splash with VERSION right-justified to align with graphic
+    splash = SPLASH.replace("$v", f"{VERSION:>37}")
+    click.echo(f"{Fore.GREEN}{Style.BRIGHT}{splash}{Style.RESET_ALL}")
     
     config = load_config()
     grok_config = config["mcp"]["grok-ai-config"]
@@ -57,8 +58,8 @@ def fedsrv_cli():
             click.echo(f"{Style.BRIGHT}Available Commands:{Style.RESET_ALL}")
             click.echo("- help: Lists all commands and a usage summary of each.")
             click.echo("- mcp: Enters a mode that communicates directly with a FedSrv MCP Service via Natural Language.")
-            click.echo("- exit: Exits the CLI.")
             click.echo("- version: Displays the CLI version.")
+            click.echo("- exit: Exits the CLI.")
         elif command == "version":
             click.echo(f"{Style.BRIGHT}> {VERSION}{Style.RESET_ALL}")
         elif command == "mcp":
