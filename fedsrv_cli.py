@@ -21,7 +21,6 @@ SPLASH = r"""
 
 def load_config():
     """Load configuration from .env (CONFIG_JSON) or config.json, or raise an error if neither exists."""
-    # Check for .env first
     load_dotenv()
     config_json = os.getenv("CONFIG_JSON")
     if config_json:
@@ -31,7 +30,6 @@ def load_config():
             click.echo(f"{Fore.RED}Error parsing CONFIG_JSON from .env: {e}{Style.RESET_ALL}")
             raise click.Abort()
 
-    # If no .env or CONFIG_JSON, check for config.json
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
@@ -40,7 +38,6 @@ def load_config():
             click.echo(f"{Fore.RED}Error loading config.json: {e}{Style.RESET_ALL}")
             raise click.Abort()
 
-    # If neither exists, raise an error
     click.echo(f"{Fore.RED}No configuration found: .env with CONFIG_JSON or config.json required{Style.RESET_ALL}")
     raise click.Abort()
 
@@ -61,7 +58,6 @@ def test_connection(config, name, headers, endpoint, test_payload=None):
 @click.command()
 def fedsrv_cli():
     """A CLI for interacting with FedSrv MCP Service."""
-    # Display green ASCII splash with VERSION right-justified to align with graphic
     splash = SPLASH.replace("$v", f"{VERSION:>37}")
     click.echo(f"{Fore.GREEN}{Style.BRIGHT}{splash}{Style.RESET_ALL}")
     
@@ -85,7 +81,13 @@ def fedsrv_cli():
             
             grok_headers = {"Authorization": f"Bearer {grok_config.get('api_key')}", "Content-Type": "application/json"}
             mcp_headers = {"x-functions-key": mcp_config.get('api_key'), "Content-Type": "application/json"}
-            grok_test_payload = {"model": grok_config.get('model', 'grok-3'), "messages": [{"role": "user", "content": "test"}]}
+            grok_test_payload = {
+                "model": grok_config.get('model', 'grok-3'),
+                "messages": [
+                    {"role": "system", "content": grok_config.get('pre_prompt', '')},
+                    {"role": "user", "content": "test"}
+                ]
+            }
             
             grok_ok = test_connection(grok_config, 'Grok AI Endpoint "Big LLM"', grok_headers, grok_config.get('endpoint', 'https://api.x.ai/v1'), grok_test_payload)
             mcp_ok = test_connection(mcp_config, 'MCP AI Endpoint "Little LLM"', mcp_headers, mcp_config.get('endpoint', ''))
@@ -95,31 +97,53 @@ def fedsrv_cli():
                 continue
 
             click.echo(f"{Style.BRIGHT}To leave MCP Mode, type exit or back (as the only thing on a line).{Style.RESET_ALL}")
+            click.echo(f"{Style.BRIGHT}Type help for MCP mode commands.{Style.RESET_ALL}")
 
             with requests.Session() as session:
+                in_big_llm_mode = False
                 while True:
-                    prompt = click.prompt(f"{Style.BRIGHT}fedsrv-cli|mcp{Style.RESET_ALL}", type=str, prompt_suffix="> ").strip()
+                    prompt_suffix = "|big-llm>" if in_big_llm_mode else "|mcp>"
+                    prompt = click.prompt(f"{Style.BRIGHT}fedsrv-cli{prompt_suffix}{Style.RESET_ALL}", type=str, prompt_suffix="> ").strip()
                     
-                    if prompt in ("exit", "back") and not (prompt.startswith("'") or prompt.startswith('"')):
+                    if prompt == "help":
+                        click.echo(f"{Style.BRIGHT}MCP Mode Commands:{Style.RESET_ALL}")
+                        click.echo("- help: Shows this MCP mode-specific help.")
+                        click.echo("- back or exit: Leaves MCP mode (or big-llm mode if active).")
+                        click.echo("- mode:big-llm: Enters a mode showing only Grok-3 LLM output.")
+                        click.echo("- Any other input: Sends the request directly to the MCP service.")
+                    elif prompt == "mode:big-llm" and not in_big_llm_mode:
+                        in_big_llm_mode = True
+                        click.echo(f"{Style.BRIGHT}Now entering Big LLM Mode. Only Grok-3 output will be shown.{Style.RESET_ALL}")
+                        click.echo(f"{Style.BRIGHT}Type back or exit to return to MCP mode.{Style.RESET_ALL}")
+                    elif prompt in ("exit", "back") and in_big_llm_mode:
+                        in_big_llm_mode = False
+                        click.echo(f"{Style.BRIGHT}Returning to MCP Mode.{Style.RESET_ALL}")
+                    elif prompt in ("exit", "back") and not in_big_llm_mode:
                         click.echo(f"{Style.BRIGHT}Connection to Grok AI Endpoint \"Big LLM\" closed.{Style.RESET_ALL}")
                         click.echo(f"{Style.BRIGHT}Connection to MCP AI Endpoint \"Little LLM\" closed.{Style.RESET_ALL}")
                         break
-                    
-                    try:
-                        if grok_ok:
-                            payload = {"model": grok_config.get('model', 'grok-3'), "messages": [{"role": "user", "content": prompt}]}
-                            response = session.post(grok_config.get('endpoint'), json=payload, headers=grok_headers, timeout=10)
-                            response.raise_for_status()
-                            content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No response")
-                            click.echo(f"{Style.BRIGHT}> (Grok Response:) {content}{Style.RESET_ALL}")
-                        
-                        if mcp_ok:
-                            response = session.post(mcp_config.get('endpoint'), json={"query": prompt}, headers=mcp_headers, timeout=10)
-                            response.raise_for_status()
-                            content = response.json().get("result", "No response")
-                            click.echo(f"{Style.BRIGHT}> (MCP Response:) {content}{Style.RESET_ALL}")
-                    except Exception as e:
-                        click.echo(f"{Fore.RED}Error communicating with API: {e}{Style.RESET_ALL}")
+                    else:
+                        try:
+                            if grok_ok and not in_big_llm_mode:
+                                payload = {
+                                    "model": grok_config.get('model', 'grok-3'),
+                                    "messages": [
+                                        {"role": "system", "content": grok_config.get('pre_prompt', '')},
+                                        {"role": "user", "content": prompt}
+                                    ]
+                                }
+                                response = session.post(grok_config.get('endpoint'), json=payload, headers=grok_headers, timeout=10)
+                                response.raise_for_status()
+                                content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No response")
+                                click.echo(f"{Style.BRIGHT}> (Grok Response:) {content}{Style.RESET_ALL}")
+                            
+                            if mcp_ok and not in_big_llm_mode:
+                                response = session.post(mcp_config.get('endpoint'), json={"query": prompt}, headers=mcp_headers, timeout=10)
+                                response.raise_for_status()
+                                content = response.json().get("result", "No response")
+                                click.echo(f"{Style.BRIGHT}> (MCP Response:) {content}{Style.RESET_ALL}")
+                        except Exception as e:
+                            click.echo(f"{Fore.RED}Error communicating with API: {e}{Style.RESET_ALL}")
         elif command == "exit":
             click.echo(f"{Style.BRIGHT}Exiting CLI...{Style.RESET_ALL}")
             break
