@@ -5,6 +5,8 @@ import requests
 import colorama
 from colorama import Fore, Style
 from dotenv import load_dotenv
+import rdflib
+from rapidfuzz import fuzz
 
 colorama.init()
 
@@ -13,22 +15,19 @@ VERSION = "0.1"
 
 SPLASH = r"""
    ____       ______            _______   ____
-  / __/__ ___/ / __/____  _____/ ___/ /  /  _/
- / _// -_) _  /\ \/ __/ |/ /__/ /__/ /___/ /  
+  / __/__  ___/ / __/____  _____/ ___/ /  /  _/
+ / _// -_) _  /\  _/ __/ |/ /__/ /__/ /___/ /  
 /_/  \__/\_,_/___/_/  |___/   \___/____/___/  
-                                    version 0.1
+     version 0.1
 """
 
 def merge_dicts(source, target):
     """Recursively merge source dict into target, preserving target values unless source is blank."""
     for key, value in source.items():
-        # If source value is a dict, recurse
         if isinstance(value, dict) and key in target and isinstance(target[key], dict):
             merge_dicts(value, target[key])
-        # If source value is blank (empty string, None, empty dict), use target value if available
-        elif value in ("", None, {}) and key in target:
+        elif value in ("", None, {}) and target.get(key):
             continue
-        # Otherwise, use source value if key not in target
         elif key not in target:
             target[key] = value
     return target
@@ -37,7 +36,6 @@ def load_config():
     """Load configuration from .env (CONFIG_JSON) first, then merge with config.json."""
     config = {}
     
-    # Step 1: Load from .env (CONFIG_JSON) if available
     load_dotenv()
     config_json = os.getenv("CONFIG_JSON")
     if config_json:
@@ -47,22 +45,45 @@ def load_config():
             click.echo(f"{Fore.RED}Error parsing CONFIG_JSON from .env: {e}{Style.RESET_ALL}")
             raise click.Abort()
 
-    # Step 2: Merge with config.json if it exists
     if os.path.exists(CONFIG_PATH):
         try:
             with open(CONFIG_PATH, "r") as f:
                 json_config = json.load(f)
                 config = merge_dicts(json_config, config)
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            click.echo(f"{Fore.RED}Error loading config.json: {e}{Style.RESET_ALL}")
-            raise click.Abort()
+            click.echo(f"Error loading config file: {e}", Style.RESET_ALL)
+            return {}
 
-    # Check if config is empty (neither .env nor config.json provided valid data)
     if not config:
         click.echo(f"{Fore.RED}No configuration found: .env with CONFIG_JSON or config.json required{Style.RESET_ALL}")
         raise click.Abort()
 
     return config
+
+def load_knowledge_graph(config):
+    """Placeholder: Load Knowledge Graph using rdflib."""
+    kg_path = config.get("mcp", {}).get("grok-ai-config", {}).get("kg-data", "")
+    if kg_path and os.path.exists(kg_path):
+        graph = rdflib.Graph()
+        try:
+            graph.parse(kg_path, format="turtle")
+            click.echo(f"{Fore.YELLOW}Loaded Knowledge Graph from {kg_path}{Style.RESET_ALL}")
+            return graph
+        except Exception as e:
+            click.echo(f"{Fore.RED}Error loading Knowledge Graph: {e}{Style.RESET_ALL}")
+    return None
+
+def fuzzy_match_query(query, kg_labels):
+    """Placeholder: Fuzzy match query terms to KG labels using rapidfuzz."""
+    if kg_labels:
+        click.echo(f"{Fore.YELLOW}Fuzzy matching query: {query} against {len(kg_labels)} KG labels{Style.RESET_ALL}")
+    return []
+
+def initialize_memory():
+    """Stub: Initialize in-memory list for prompt/response history."""
+    memory = []  # List to store [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
+    click.echo(f"{Fore.YELLOW}Initialized in-memory history storage{Style.RESET_ALL}")
+    return memory
 
 def test_connection(config, name, headers, endpoint, test_payload=None):
     try:
@@ -93,6 +114,24 @@ def fedsrv_cli():
     grok_config = config["mcp"]["grok-ai-config"]
     mcp_config = config["mcp"]["mcp-service-config"]
 
+    # Load Knowledge Graph (placeholder)
+    kg_graph = load_knowledge_graph(config)
+
+    # Initialize memory (stub)
+    memory = initialize_memory()
+
+    # Get system prompt (first from system-prompts if available, else empty string)
+    system_prompt = ""
+    system_prompts = grok_config.get("system-prompts", [])
+    if system_prompts and isinstance(system_prompts, list) and len(system_prompts) > 0:
+        system_prompt = system_prompts[0].get("content", "")
+
+    # Check for startup-prompts and process if present (placeholder: log for now)
+    startup_prompts = grok_config.get("startup-prompts", [])
+    if startup_prompts and isinstance(startup_prompts, list):
+        for prompt in startup_prompts:
+            click.echo(f"{Fore.YELLOW}Processing startup prompt: {prompt.get('content', '')}{Style.RESET_ALL}")
+
     while True:
         command = click.prompt(f"{Style.BRIGHT}fedsrv-cli{Style.RESET_ALL}", type=str, prompt_suffix="> ").strip()
         
@@ -113,7 +152,7 @@ def fedsrv_cli():
             grok_test_payload = {
                 "model": grok_config.get('model', 'grok-3'),
                 "messages": [
-                    {"role": "system", "content": grok_config.get('system-prompt', '')},
+                    {"role": "system", "content": system_prompt},
                     {"role": "user", "content": "test"}
                 ]
             }
@@ -162,7 +201,7 @@ def fedsrv_cli():
                                 payload = {
                                     "model": grok_config.get('model', 'grok-3'),
                                     "messages": [
-                                        {"role": "system", "content": grok_config.get('system-prompt', '')},
+                                        {"role": "system", "content": system_prompt},
                                         {"role": "user", "content": prompt}
                                     ]
                                 }
@@ -191,4 +230,3 @@ def fedsrv_cli():
 
 if __name__ == "__main__":
     fedsrv_cli()
-

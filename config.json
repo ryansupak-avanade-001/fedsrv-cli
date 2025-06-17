@@ -4,7 +4,13 @@
       "api_key": "",
       "endpoint": "https://api.x.ai/v1/chat/completions",
       "model": "grok-3",
-		"system-prompt":""	
+		"system-prompts":
+		[
+			{
+				"name":"mcp-delegate",
+				"content":"You are an expert in parsing Natural Language Requests into atomic, simple data requests."
+			}	
+		]	
     },
     "mcp-service-config": {
       "api_key": "<Your MCP API Key>",
