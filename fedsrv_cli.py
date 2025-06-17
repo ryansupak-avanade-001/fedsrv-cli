@@ -4,6 +4,7 @@ import json
 import requests
 import colorama
 from colorama import Fore, Style
+from dotenv import load_dotenv
 
 colorama.init()
 
@@ -19,12 +20,29 @@ SPLASH = r"""
 """
 
 def load_config():
-    try:
-        with open(CONFIG_PATH, "r") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError) as e:
-        click.echo(f"{Fore.RED}Error loading config: {e}{Style.RESET_ALL}")
-        return {"mcp": {"grok-ai-config": {}, "mcp-service-config": {}}}
+    """Load configuration from .env (CONFIG_JSON) or config.json, or raise an error if neither exists."""
+    # Check for .env first
+    load_dotenv()
+    config_json = os.getenv("CONFIG_JSON")
+    if config_json:
+        try:
+            return json.loads(config_json)
+        except json.JSONDecodeError as e:
+            click.echo(f"{Fore.RED}Error parsing CONFIG_JSON from .env: {e}{Style.RESET_ALL}")
+            raise click.Abort()
+
+    # If no .env or CONFIG_JSON, check for config.json
+    if os.path.exists(CONFIG_PATH):
+        try:
+            with open(CONFIG_PATH, "r") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            click.echo(f"{Fore.RED}Error loading config.json: {e}{Style.RESET_ALL}")
+            raise click.Abort()
+
+    # If neither exists, raise an error
+    click.echo(f"{Fore.RED}No configuration found: .env with CONFIG_JSON or config.json required{Style.RESET_ALL}")
+    raise click.Abort()
 
 def test_connection(config, name, headers, endpoint, test_payload=None):
     try:
