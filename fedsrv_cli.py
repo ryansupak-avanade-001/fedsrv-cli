@@ -15,10 +15,10 @@ VERSION = "0.1"
 
 SPLASH = r"""
    ____       ______            _______   ____
-  / __/__  ___/ / __/____  _____/ ___/ /  /  _/
- / _// -_) _  /\  _/ __/ |/ /__/ /__/ /___/ /  
+  / __/__ ___/ / __/____  _____/ ___/ /  /  _/
+ / _// -_) _  /\ \/ __/ |/ /__/ /__/ /___/ /  
 /_/  \__/\_,_/___/_/  |___/   \___/____/___/  
-     version 0.1
+                                    version 0.1
 """
 
 def merge_dicts(source, target):
@@ -51,8 +51,8 @@ def load_config():
                 json_config = json.load(f)
                 config = merge_dicts(json_config, config)
         except (FileNotFoundError, json.JSONDecodeError) as e:
-            click.echo(f"Error loading config file: {e}", Style.RESET_ALL)
-            return {}
+            click.echo(f"{Fore.RED}Error loading config.json: {e}{Style.RESET_ALL}")
+            raise click.Abort()
 
     if not config:
         click.echo(f"{Fore.RED}No configuration found: .env with CONFIG_JSON or config.json required{Style.RESET_ALL}")
@@ -62,7 +62,7 @@ def load_config():
 
 def load_knowledge_graph(config):
     """Placeholder: Load Knowledge Graph using rdflib."""
-    kg_path = config.get("mcp", {}).get("grok-ai-config", {}).get("kg-data", "")
+    kg_path = config.get("mcp", {}).get("grok-ai-config", {}).get("kg-path", "")
     if kg_path and os.path.exists(kg_path):
         graph = rdflib.Graph()
         try:
