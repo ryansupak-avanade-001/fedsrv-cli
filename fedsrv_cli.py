@@ -7,11 +7,15 @@ from colorama import Fore, Style
 from dotenv import load_dotenv
 import rdflib
 from rapidfuzz import fuzz
+from datetime import datetime
 
 colorama.init()
 
 CONFIG_PATH = os.path.join(os.path.dirname(__file__), "config.json")
 VERSION = "0.1"
+MAX_HISTORY = 10  # Max messages to store
+TOKEN_LIMIT = 131072  # Grok-3 token limit (characters)
+FUZZY_THRESHOLD = 70  # Fuzzy match score threshold
 
 SPLASH = r"""
    ____       ______            _______   ____
@@ -61,7 +65,7 @@ def load_config():
     return config
 
 def load_knowledge_graph(config):
-    """Placeholder: Load Knowledge Graph using rdflib."""
+    """Load Knowledge Graph using rdflib."""
     kg_path = config.get("mcp", {}).get("grok-ai-config", {}).get("kg-path", "")
     if kg_path and os.path.exists(kg_path):
         graph = rdflib.Graph()
@@ -73,17 +77,34 @@ def load_knowledge_graph(config):
             click.echo(f"{Fore.RED}Error loading Knowledge Graph: {e}{Style.RESET_ALL}")
     return None
 
-def fuzzy_match_query(query, kg_labels):
-    """Placeholder: Fuzzy match query terms to KG labels using rapidfuzz."""
-    if kg_labels:
-        click.echo(f"{Fore.YELLOW}Fuzzy matching query: {query} against {len(kg_labels)} KG labels{Style.RESET_ALL}")
-    return []
+def fuzzy_match_query(query, items, key=None):
+    """Fuzzy match query against a list of items (KG labels or messages)."""
+    matches = []
+    query = query.lower()
+    for item in items:
+        text = item.lower() if key is None else item[key].lower()
+        score = fuzz.token_set_ratio(query, text)
+        if score > FUZZY_THRESHOLD:
+            matches.append((item, score))
+    matches.sort(key=lambda x: x[1], reverse=True)
+    return [m[0] for m in matches[:5]]  # Limit to top 5 matches
 
-def initialize_memory():
-    """Stub: Initialize in-memory list for prompt/response history."""
-    memory = []  # List to store [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
-    click.echo(f"{Fore.YELLOW}Initialized in-memory history storage{Style.RESET_ALL}")
-    return memory
+def get_kg_labels(graph):
+    """Extract labels from KG for fuzzy matching."""
+    if not graph:
+        return []
+    labels = set()
+    for s, p, o in graph:
+        for term in (s, p, o):
+            if isinstance(term, rdflib.Literal) or isinstance(term, rdflib.URIRef):
+                label = str(term).split("#")[-1].split("/")[-1]
+                if label:
+                    labels.add(label)
+    return list(labels)
+
+def estimate_tokens(messages):
+    """Estimate token count (1 char ≈ 1 token)."""
+    return sum(len(json.dumps(msg)) for msg in messages)
 
 def test_connection(config, name, headers, endpoint, test_payload=None):
     try:
@@ -114,19 +135,20 @@ def fedsrv_cli():
     grok_config = config["mcp"]["grok-ai-config"]
     mcp_config = config["mcp"]["mcp-service-config"]
 
-    # Load Knowledge Graph (placeholder)
+    # Load Knowledge Graph
     kg_graph = load_knowledge_graph(config)
+    kg_labels = get_kg_labels(kg_graph)
 
-    # Initialize memory (stub)
-    memory = initialize_memory()
+    # Initialize memory
+    memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
 
-    # Get system prompt (first from system-prompts if available, else empty string)
+    # Get system prompt
     system_prompt = ""
     system_prompts = grok_config.get("system-prompts", [])
     if system_prompts and isinstance(system_prompts, list) and len(system_prompts) > 0:
         system_prompt = system_prompts[0].get("content", "")
 
-    # Check for startup-prompts and process if present (placeholder: log for now)
+    # Process startup-prompts (log only)
     startup_prompts = grok_config.get("startup-prompts", [])
     if startup_prompts and isinstance(startup_prompts, list):
         for prompt in startup_prompts:
@@ -178,11 +200,11 @@ def fedsrv_cli():
                         click.echo("- help: Shows this MCP mode-specific help.")
                         click.echo("- back: Returns to the main CLI menu (or to MCP mode from big-llm mode).")
                         click.echo("- exit: Exits the CLI entirely.")
-                        click.echo("- mode:big-llm: Enters a mode showing only Grok-3 LLM output.")
-                        click.echo("- Any other input: Sends the request directly to the MCP service (in big-llm mode).")
+                        click.echo("- mode:big-llm: Enters a mode for sending requests to Grok-3 and MCP services.")
+                        click.echo("- Any other input: Sends the request to the MCP service (in big-llm mode).")
                     elif prompt == "mode:big-llm" and not in_big_llm_mode:
                         in_big_llm_mode = True
-                        click.echo(f"{Style.BRIGHT}Now entering Big LLM Mode. Only Grok-3 output will be shown.{Style.RESET_ALL}")
+                        click.echo(f"{Style.BRIGHT}Now entering Big LLM Mode. Requests will be sent to Grok-3 and MCP services.{Style.BRIGHT}")
                         click.echo(f"{Style.BRIGHT}Type back to return to MCP mode, or exit to quit CLI.{Style.RESET_ALL}")
                     elif prompt == "back" and in_big_llm_mode:
                         in_big_llm_mode = False
@@ -197,24 +219,53 @@ def fedsrv_cli():
                         return
                     elif in_big_llm_mode:
                         try:
+                            # Fuzzy match KG labels
+                            kg_matches = fuzzy_match_query(prompt, kg_labels)
+                            kg_context = ", ".join(kg_matches) if kg_matches else "No KG matches"
+
+                            # Fuzzy match prior messages
+                            history_matches = fuzzy_match_query(prompt, memory, key="content")
+                            # Get last 3 messages (user/assistant pairs)
+                            last_three = memory[-3:] if len(memory) >= 3 else memory
+
+                            # Combine messages for payload
+                            messages = [
+                                {"role": "system", "content": f"{system_prompt}\nKG context: {kg_context}"},
+                            ] + last_three + history_matches + [
+                                {"role": "user", "content": prompt}
+                            ]
+
+                            # Check token limit
+                            if estimate_tokens(messages) > TOKEN_LIMIT:
+                                messages = messages[:1] + messages[-4:]  # Keep system, last 3, current query
+
                             if grok_ok:
                                 payload = {
                                     "model": grok_config.get('model', 'grok-3'),
-                                    "messages": [
-                                        {"role": "system", "content": system_prompt},
-                                        {"role": "user", "content": prompt}
-                                    ]
+                                    "messages": messages
                                 }
                                 response = session.post(grok_config.get('endpoint'), json=payload, headers=grok_headers, timeout=10)
                                 response.raise_for_status()
                                 content = response.json().get("choices", [{}])[0].get("message", {}).get("content", "No response")
                                 click.echo(f"{Style.BRIGHT}> (Grok Response:) {content}{Style.RESET_ALL}")
-                            
+
+                                # Store user prompt and response
+                                memory.append({"role": "user", "content": prompt, "timestamp": datetime.now().isoformat()})
+                                memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
+                                if len(memory) > MAX_HISTORY:
+                                    memory = memory[-MAX_HISTORY:]
+
                             if mcp_ok:
                                 response = session.post(mcp_config.get('endpoint'), json={"query": prompt}, headers=mcp_headers, timeout=10)
                                 response.raise_for_status()
                                 content = response.json().get("result", "No response")
                                 click.echo(f"{Style.BRIGHT}> (MCP Response:) {content}{Style.RESET_ALL}")
+
+                                # Store MCP response
+                                memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
+                                if len(memory) > MAX_HISTORY:
+                                    memory = memory[-MAX_HISTORY:]
+
                         except Exception as e:
                             click.echo(f"{Fore.RED}Error communicating with API: {e}{Style.RESET_ALL}")
                     else:
