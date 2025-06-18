@@ -4,17 +4,31 @@
       "api_key": "",
       "endpoint": "https://api.x.ai/v1/chat/completions",
       "model": "grok-3",
-		"system-prompts":
-		[
-			{
-				"name":"mcp-delegate",
-				"content":"You are an expert in parsing Natural Language Requests into atomic, simple data requests."
-			}	
-		]	
+      "system-prompts": [
+        {
+          "name": "mcp-delegate",
+          "content": "You are an expert in parsing Natural Language Requests into atomic, simple data requests."
+        }
+      ],
+      "startup-prompts": [
+        {
+          "content": "Initialize MCP context for processing queries."
+        },
+        {
+          "name": "get-kg",
+          "content": "https://your-server/northwind.owl"
+        }
+      ]
     },
     "mcp-service-config": {
-      "api_key": "<Your MCP API Key>",
-      "endpoint": "<Your MCP Endpoint>"
+      "api_key": "",
+      "endpoint": "https://your-mcp-service.com/api/query"
+    },
+    "cli-config": {
+      "max-tokens": 131072,
+      "verbose-mode": false,
+      "max-history": 10,
+      "fuzzy-threshold": 70
     }
   }
 }
