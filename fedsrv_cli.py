@@ -110,10 +110,23 @@ def fuzzy_match_query(query, items, key=None, verbose_mode=False, fuzzy_threshol
         if score > fuzzy_threshold:
             matches.append((item, score))
     matches.sort(key=lambda x: x[1], reverse=True)
-    matched_items = [m[0] for m in matches[:5]]  # Limit to top 5 matches
+    matched_items = [m[0] for m in matches[:5] if isinstance(m[0], (str, dict))]
     if verbose_mode:
-        click.echo(f"{Fore.YELLOW}Fuzzy matches (score > {fuzzy_threshold}): {[(item if key is None else item[key], score) for item, score in matches[:5]]}{Style.RESET_ALL}")
-    return matched_items
+        display_items = [(m[0][key] if key and isinstance(m[0], dict) else m[0], m[1]) for m in matches[:5]]
+        click.echo(f"{Fore.YELLOW}Fuzzy matches (score > {fuzzy_threshold}): {display_items}{Style.RESET_ALL}")
+    return matched_items, matches[:5]
+
+def get_context_words(text, matched_word, before=3, after=3):
+    """Extract words before and after a matched word."""
+    words = text.split()
+    for i, word in enumerate(words):
+        if word.lower() == matched_word.lower():
+            start = max(0, i - before)
+            end = min(len(words), i + after + 1)
+            before_words = " ".join(words[start:i])
+            after_words = " ".join(words[i+1:end])
+            return before_words, after_words
+    return "", ""
 
 def get_kg_labels(graph):
     """Extract labels from KG for fuzzy matching."""
@@ -183,11 +196,9 @@ def fedsrv_cli():
     main_session = PromptSession(history=main_history, style=prompt_style)
     mcp_session = PromptSession(history=mcp_history, style=prompt_style)
 
-    # Get system prompt
-    system_prompt = ""
+    # Get system prompts
     system_prompts = grok_config.get("system-prompts", [])
-    if system_prompts and isinstance(system_prompts, list) and len(system_prompts) > 0:
-        system_prompt = system_prompts[0].get("content", "")
+    combined_system_prompt = "\n".join(prompt.get("content", "") for prompt in system_prompts if isinstance(prompt, dict) and "content" in prompt) if system_prompts else ""
 
     # Process startup-prompts (log only, excluding get-kg)
     if startup_prompts and isinstance(startup_prompts, list):
@@ -227,7 +238,7 @@ def fedsrv_cli():
             grok_test_payload = {
                 "model": grok_config.get('model', 'grok-3'),
                 "messages": [
-                    {"role": "system", "content": system_prompt},
+                    {"role": "system", "content": combined_system_prompt},
                     {"role": "user", "content": "test"}
                 ]
             }
@@ -273,6 +284,14 @@ def fedsrv_cli():
                         in_big_llm_mode = True
                         click.echo(f"{Style.BRIGHT}Now entering Big LLM Mode. Requests will be sent to Grok-3 and MCP services.{Style.RESET_ALL}")
                         click.echo(f"{Style.BRIGHT}Type back to return to MCP mode, or exit to quit CLI.{Style.RESET_ALL}")
+                        if verbose_mode:
+                            click.echo(f"{Fore.YELLOW}Startup prompts:{Style.RESET_ALL}")
+                            for prompt_entry in startup_prompts:
+                                if isinstance(prompt_entry, dict):
+                                    if "name" in prompt_entry and prompt_entry["name"] == "get-kg":
+                                        click.echo(f"{Fore.YELLOW}  get-kg: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
+                                    elif "content" in prompt_entry:
+                                        click.echo(f"{Fore.YELLOW}  content: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
                     elif prompt == "back" and in_big_llm_mode:
                         in_big_llm_mode = False
                         click.echo(f"{Style.BRIGHT}Returning to MCP Mode.{Style.RESET_ALL}")
@@ -287,22 +306,50 @@ def fedsrv_cli():
                     elif in_big_llm_mode:
                         try:
                             # Fuzzy match KG labels
-                            kg_matches = fuzzy_match_query(prompt, kg_labels, verbose_mode=verbose_mode, fuzzy_threshold=fuzzy_threshold)
-                            kg_context = ", ".join(kg_matches) if kg_matches else "No KG matches"
+                            kg_matches, _ = fuzzy_match_query(prompt, kg_labels, verbose_mode=verbose_mode, fuzzy_threshold=fuzzy_threshold)
+                            kg_context = ", ".join(str(m) for m in kg_matches) if kg_matches else "No KG matches"
+                            if not isinstance(kg_context, str):
+                                click.echo(f"{Fore.RED}Invalid KG context type: {type(kg_context)}{Style.RESET_ALL}")
+                                kg_context = "No KG matches"
                             if verbose_mode:
                                 click.echo(f"{Fore.YELLOW}KG context: {kg_context}{Style.RESET_ALL}")
 
                             # Fuzzy match prior messages
-                            history_matches = fuzzy_match_query(prompt, memory, key="content", verbose_mode=verbose_mode, fuzzy_threshold=fuzzy_threshold)
+                            history_matches, fuzzy_matches = fuzzy_match_query(prompt, memory, key="content", verbose_mode=verbose_mode, fuzzy_threshold=fuzzy_threshold)
                             # Get last 3 messages (user/assistant pairs)
                             last_three = memory[-3:] if len(memory) >= 3 else memory
 
-                            # Combine messages for payload
+                            # Log memory summary in verbose mode
+                            if verbose_mode:
+                                click.echo(f"{Fore.YELLOW}Memory prompts included:{Style.RESET_ALL}")
+                                # Recent messages (last three)
+                                if last_three:
+                                    click.echo(f"{Fore.YELLOW}  Recent messages (last 3):{Style.RESET_ALL}")
+                                    for msg in last_three:
+                                        first_words = " ".join(msg["content"].split()[:5])
+                                        role = msg["role"].capitalize()
+                                        click.echo(f"{Fore.YELLOW}    {role}: {first_words}...{Style.RESET_ALL}")
+                                # Fuzzy matched messages
+                                if history_matches:
+                                    click.echo(f"{Fore.YELLOW}  Fuzzy matched messages:{Style.RESET_ALL}")
+                                    for msg, (item, score) in zip(history_matches, fuzzy_matches):
+                                        content = item["content"]
+                                        matched_word = content.lower().split()[0]  # Approximate matched word
+                                        before, after = get_context_words(content, matched_word)
+                                        role = item["role"].capitalize()
+                                        click.echo(f"{Fore.YELLOW}    {role}: {before} **{matched_word}** {after} (Score: {score:.1f}){Style.RESET_ALL}")
+
+                            # Validate messages
                             messages = [
-                                {"role": "system", "content": f"{system_prompt}\nKG context: {kg_context}"},
+                                {"role": "system", "content": f"{combined_system_prompt}\nKG context: {kg_context}"},
                             ] + last_three + history_matches + [
                                 {"role": "user", "content": prompt}
                             ]
+                            for msg in messages:
+                                if not isinstance(msg, dict) or "role" not in msg or "content" not in msg or not isinstance(msg["content"], str):
+                                    if verbose_mode:
+                                        click.echo(f"{Fore.RED}Invalid message format in payload: {msg}{Style.RESET_ALL}")
+                                    continue
 
                             # Check token limit
                             token_count = estimate_tokens(messages)
@@ -352,6 +399,8 @@ def fedsrv_cli():
                                     memory = memory[-max_history:]
 
                         except Exception as e:
+                            if verbose_mode:
+                                click.echo(f"{Fore.RED}API error details: {e}\nPayload: {json.dumps(payload, indent=2) if 'payload' in locals() else 'Not constructed'}{Style.RESET_ALL}")
                             click.echo(f"{Fore.RED}Error communicating with API: {e}{Style.RESET_ALL}")
                     else:
                         click.echo(f"{Fore.YELLOW}Input ignored in MCP mode. Enter mode:big-llm to send requests.{Style.RESET_ALL}")

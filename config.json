@@ -16,7 +16,7 @@
         },
         {
           "name": "get-kg",
-          "content": "https://your-server/northwind.owl"
+          "content": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx"
         }
       ]
     },
@@ -26,7 +26,7 @@
     },
     "cli-config": {
       "max-tokens": 131072,
-      "verbose-mode": false,
+      "verbose-mode": true,
       "max-history": 10,
       "fuzzy-threshold": 70
     }
