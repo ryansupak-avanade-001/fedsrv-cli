@@ -1,5 +1,6 @@
 import click
 import json
+import os
 from datetime import datetime
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
@@ -47,7 +48,13 @@ def fedsrv_cli():
 
     # Load Knowledge Graph from startup-prompts
     startup_prompts = grok_config.get("startup-prompts", [])
-    kg_labels = load_knowledge_graph(startup_prompts)
+    jsonld_graph = load_knowledge_graph(startup_prompts, verbose_mode=verbose_mode)
+    
+    # Extract kg_labels from JSON-LD graph
+    kg_labels = []
+    for item in jsonld_graph.get('@graph', []):
+        if item.get('@type') == 'Class' and '@id' in item:
+            kg_labels.append(item['@id'])
 
     # Initialize memory
     memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
@@ -61,12 +68,6 @@ def fedsrv_cli():
     # Get system prompts
     system_prompts = grok_config.get("system-prompts", [])
     combined_system_prompt = "\n".join(prompt.get("content", "") for prompt in system_prompts if isinstance(prompt, dict) and "content" in prompt) if system_prompts else ""
-
-    # Process startup-prompts (log only, excluding get-kg)
-    if startup_prompts and isinstance(startup_prompts, list):
-        for prompt in startup_prompts:
-            if "content" in prompt and "name" not in prompt:
-                click.echo(f"{Fore.YELLOW}Processing startup prompt: {prompt.get('content', '')}{Style.RESET_ALL}")
 
     # Connection notification for main CLI
     click.echo(f"{Style.BRIGHT}Connected to CLI{Style.RESET_ALL}")
@@ -94,6 +95,11 @@ def fedsrv_cli():
             click.echo(f"{Style.BRIGHT}Verbose mode: OFF{Style.RESET_ALL}")
         elif command == "mcp":
             click.echo(f"{Style.BRIGHT}Now entering MCP Mode. In this mode, all text entered will be sent directly to the MCP as-is.{Style.RESET_ALL}")
+            # Process startup-prompts (log only, excluding get-kg)
+            if startup_prompts and isinstance(startup_prompts, list):
+                for prompt in startup_prompts:
+                    if "content" in prompt and "name" not in prompt:
+                        click.echo(f"{Fore.YELLOW}Processing startup prompt: {prompt.get('content', '')}{Style.RESET_ALL}")
             
             grok_headers = {"Authorization": f"Bearer {grok_config.get('api_key')}", "Content-Type": "application/json"}
             mcp_headers = {"x-functions-key": mcp_config.get('api_key'), "Content-Type": "application/json"}
