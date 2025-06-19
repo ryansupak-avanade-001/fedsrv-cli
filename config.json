@@ -16,7 +16,8 @@
         },
         {
           "name": "get-kg",
-          "content": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx"
+			"content": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx",
+          "content_old": "osdu.owx"
         }
       ]
     },
