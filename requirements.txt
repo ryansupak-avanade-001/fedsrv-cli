@@ -10,3 +10,4 @@ rdflib==7.0.0
 rapidfuzz==3.9.0
 prompt_toolkit==3.0.47
 chardet
+rdflib>=6.3.2

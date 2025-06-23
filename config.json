@@ -16,8 +16,8 @@
         },
         {
           "name": "get-kg",
-			"content": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx",
-          "content_old": "osdu.owx"
+          "content_old": "osdu.owx",
+          "content": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx"
         }
       ]
     },
@@ -27,9 +27,20 @@
     },
     "cli-config": {
       "max-tokens": 131072,
-      "verbose-mode": true,
+      "verbose-mode": 1,
       "max-history": 10,
-      "fuzzy-threshold": 70
+      "fuzzy-threshold": 70,
+      "xml_search_paths": {
+        "class_paths": ["Declaration/Class"],
+        "subclass_paths": ["SubClassOf"],
+        "object_property_paths": ["Declaration/ObjectProperty"],
+        "object_property_domain_paths": ["ObjectPropertyDomain"],
+        "annotation_paths": ["Annotation"],
+        "subobject_property_paths": ["SubObjectPropertyOf"],
+        "annotation_assertion_paths": ["AnnotationAssertion"],
+        "object_min_cardinality_paths": ["SubClassOf"],
+        "object_union_paths": ["ObjectPropertyDomain/ObjectUnionOf"]
+      }
     }
   }
 }

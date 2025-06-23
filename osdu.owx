@@ -1,9 +1,17 @@
 <?xml version="1.0" encoding="UTF-8"?>
-<Ontology xmlns="http://www.w3.org/2002/07/owl#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xsd="http://www.w3.org/2001/XMLSchema#" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#" xml:base="https://w3id.org/osdu#" ontologyIRI="https://w3id.org/osdu#">
-<Declaration>
-<Class abbreviatedIRI="Trajectory"/>
-</Declaration>
-<Declaration>
-<Class abbreviatedIRI="Well"/>
-</Declaration>
+<Ontology xmlns="http://www.w3.org/2002/07/owl#" xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:xsd="http://www.w3.org/2001/XMLSchema#" xmlns:rdfs="http://www.w3.org/2000/01/rdf-schema#">
+  <Declaration>
+    <Class abbreviatedIRI="Well"/>
+  </Declaration>
+  <SubClassOf>
+    <Class abbreviatedIRI="DrillingSite"/>
+    <Class abbreviatedIRI="Site"/>
+  </SubClassOf>
+  <Declaration>
+    <ObjectProperty abbreviatedIRI="has_Trajectory"/>
+  </Declaration>
+  <ObjectPropertyDomain>
+    <ObjectProperty abbreviatedIRI="has_Trajectory"/>
+    <Class abbreviatedIRI="Well"/>
+  </ObjectPropertyDomain>
 </Ontology>
