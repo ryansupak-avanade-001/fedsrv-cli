@@ -1,46 +1,29 @@
 {
-  "mcp": {
-    "grok-ai-config": {
-      "api_key": "",
-      "endpoint": "https://api.x.ai/v1/chat/completions",
-      "model": "grok-3",
-      "system-prompts": [
-        {
-          "name": "mcp-delegate",
-          "content": "You are an expert in parsing Natural Language Requests into atomic, simple data requests."
-        }
-      ],
-      "startup-prompts": [
-        {
-          "content": "Initialize MCP context for processing queries."
+    "mcp": {
+        "grok-ai-config": {
+            "api_key": "",
+            "endpoint": "https://api.x.ai/v1/chat/completions",
+            "model": "grok-3",
+            "startup-prompts": [
+                {
+                    "name": "get-kg",
+                    "content": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx"
+                },
+                {
+                    "content": "You are an expert in parsing natural language into atomic JSON commands compliant with Anthropic's MCP standards, e.g., {'command': 'list_wells'}, [{'command': 'filter_wells', 'params': {'region': 'North Sea'}}], {'command': 'tools/list'}, {'command': 'resources/read', 'params': {'id': '123'}}. Respond only with valid JSON."
+                }
+            ]
         },
-        {
-          "name": "get-kg",
-          "content_old": "osdu.owx",
-          "content": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx"
+        "mcp-service-config": {
+            "api_key": "your_mcp_api_key_here",
+            "endpoint": "your_mcp_endpoint_here"
+        },
+        "cli-config": {
+            "version": "0.1",
+            "max-history": 10,
+            "max-tokens": 131072,
+            "fuzzy-threshold": 70,
+            "verbose-mode": 0
         }
-      ]
-    },
-    "mcp-service-config": {
-      "api_key": "",
-      "endpoint": "https://your-mcp-service.com/api/query"
-    },
-    "cli-config": {
-      "max-tokens": 131072,
-      "verbose-mode": 1,
-      "max-history": 10,
-      "fuzzy-threshold": 70,
-      "xml_search_paths": {
-        "class_paths": ["Declaration/Class"],
-        "subclass_paths": ["SubClassOf"],
-        "object_property_paths": ["Declaration/ObjectProperty"],
-        "object_property_domain_paths": ["ObjectPropertyDomain"],
-        "annotation_paths": ["Annotation"],
-        "subobject_property_paths": ["SubObjectPropertyOf"],
-        "annotation_assertion_paths": ["AnnotationAssertion"],
-        "object_min_cardinality_paths": ["SubClassOf"],
-        "object_union_paths": ["ObjectPropertyDomain/ObjectUnionOf"]
-      }
     }
-  }
 }
