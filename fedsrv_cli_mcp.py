@@ -7,6 +7,7 @@ import requests
 from datetime import datetime
 import colorama
 from colorama import Fore, Style
+from rapidfuzz import fuzz
 from fedsrv_cli_fuzzy_matcher import fuzzy_match_query, get_context_words
 from fedsrv_cli_api_client import test_connection
 from fedsrv_cli_utils import estimate_tokens
@@ -21,14 +22,19 @@ def run_mcp_mode(context, session):
     mcp_session = PromptSession(history=mcp_history, style=PromptStyle.from_dict({'prompt': 'bold'}))
     
     if context.verbose_mode >= 1:
-        click.echo(f"{Style.BRIGHT}Now entering MCP Mode. In this mode, commands start with '/'.{Style.RESET_ALL}")
+        click.echo(f"{Style.BRIGHT}Now entering MCP Mode. In this mode, all text entered will be sent directly to the MCP as-is.{Style.RESET_ALL}")
     
-    # Process startup-prompts (log only, excluding get-kg)
+    # Process startup-prompts (log only)
     if context.startup_prompts and isinstance(context.startup_prompts, list):
         for prompt in context.startup_prompts:
-            if "content" in prompt and "name" not in prompt:
+            if isinstance(prompt, dict) and "content" in prompt:
                 if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}Processing startup prompt: {prompt.get('content', '')}{Style.RESET_ALL}")
+                    if prompt.get("name") == "get-kg":
+                        click.echo(f"{Fore.YELLOW}  get-kg: {prompt.get('content', '')}{Style.RESET_ALL}")
+                    elif "name" in prompt:
+                        click.echo(f"{Fore.YELLOW}  {prompt.get('name')}: {prompt.get('content', '')}{Style.RESET_ALL}")
+                    else:
+                        click.echo(f"{Fore.YELLOW}  content: {prompt.get('content', '')}{Style.RESET_ALL}")
     
     grok_headers = {"Authorization": f"Bearer {context.grok_config.get('api_key')}", "Content-Type": "application/json"}
     mcp_headers = {"x-functions-key": context.mcp_config.get('api_key'), "Content-Type": "application/json"}
@@ -41,12 +47,12 @@ def run_mcp_mode(context, session):
     }
     
     # Connection tests and notifications
-    grok_ok = test_connection(context.grok_config, 'Grok AI Endpoint', grok_headers, context.grok_config.get('endpoint', 'https://api.x.ai/v1/chat/completions'), grok_test_payload)
-    mcp_ok = test_connection(context.mcp_config, 'MCP Service Endpoint', mcp_headers, context.mcp_config.get('endpoint', ''))
+    grok_ok = test_connection(context.grok_config, 'Grok AI Endpoint', grok_headers, context.grok_config.get('endpoint', 'https://api.x.ai/v1'), grok_test_payload)
+    mcp_ok = test_connection(context.mcp_config, 'MCP AI Endpoint "Little LLM"', mcp_headers, context.mcp_config.get('endpoint', ''))
     if grok_ok and context.verbose_mode >= 1:
         click.echo(f"{Style.BRIGHT}Connected to Grok AI Endpoint{Style.RESET_ALL}")
     if mcp_ok and context.verbose_mode >= 1:
-        click.echo(f"{Style.BRIGHT}Connected to MCP Service Endpoint{Style.RESET_ALL}")
+        click.echo(f"{Style.BRIGHT}Connected to MCP AI Endpoint \"Little LLM\"{Style.RESET_ALL}")
 
     if not grok_ok:
         if context.verbose_mode >= 1:
@@ -64,86 +70,92 @@ def run_mcp_mode(context, session):
         if prompt:
             mcp_history.append_string(prompt)
         
-        # Treat any input starting with "/" as a command
-        if prompt.startswith("/"):
-            if prompt == "/help":
-                click.echo(f"{Style.BRIGHT}MCP Mode Commands:{Style.RESET_ALL}")
-                click.echo("- /help: Shows this MCP mode-specific help.")
-                click.echo("- /show-tokens: Displays the current token breakdown (system, history, KG context, total) and content (in verbose mode 2).")
-                click.echo("- /reload-kg: Reloads the knowledge graph from the configured endpoint.")
-                click.echo("- /back: Returns to the main CLI menu (or to MCP mode from test mode).")
-                click.echo("- /exit: Exits the CLI entirely.")
-                click.echo("- /mode:verbose 0/1/2: Sets verbosity (0=standard, 1=verbose, 2=extreme, currently {}).".format(context.verbose_mode))
-                click.echo("- /mode:test: Enters a mode for testing knowledge graph and memory interactions with Grok-3.")
-                click.echo("- Any other input: Sends the request to the MCP Service as JSON (in test mode).")
-            elif prompt == "/show-tokens":
-                original_verbose_mode = context.verbose_mode
-                context.verbose_mode = max(1, context.verbose_mode)  # Use at least Verbose Mode 1
-                log_token_breakdown(context)
-                log_token_content(context)
-                context.verbose_mode = original_verbose_mode  # Restore original setting
-            elif prompt == "/reload-kg":
-                original_verbose_mode = context.verbose_mode
-                context.verbose_mode = max(1, context.verbose_mode)  # Use at least Verbose Mode 1
+        if prompt == "/help":
+            click.echo(f"{Style.BRIGHT}MCP Mode Commands:{Style.RESET_ALL}")
+            click.echo("- /help: Shows this MCP mode-specific help.")
+            click.echo("- /show-tokens: Displays the current token breakdown (system, history, KG context, total) and content (in verbose mode 2).")
+            click.echo("- /reload-kg: Reloads the knowledge graph from the configured endpoint.")
+            click.echo("- /back: Returns to the main CLI menu (or to MCP mode from test mode).")
+            click.echo("- /exit: Exits the CLI entirely.")
+            click.echo("- /mode:verbose 0/1/2: Sets verbosity (0=standard, 1=verbose, 2=extreme, currently {}).".format(context.verbose_mode))
+            click.echo("- /mode:test: Enters a mode for sending requests to Grok-3 and MCP services.")
+            click.echo("- Any other input: Sends the request to the MCP service (in test mode).")
+        elif prompt == "/show-tokens":
+            log_token_breakdown(context)
+            log_token_content(context)
+        elif prompt == "/reload-kg":
+            if context.verbose_mode >= 1:
                 click.echo(f"{Style.BRIGHT}Reloading Knowledge Graph...{Style.RESET_ALL}")
-                jsonld_graph = load_knowledge_graph(context.startup_prompts, verbose_mode=context.verbose_mode)
-                context.kg_labels = []
-                for item in jsonld_graph.get('@graph', []):
-                    if item.get('@type') == 'Class' and '@id' in item:
-                        context.kg_labels.append(item['@id'])
-                context.kg_context = ""  # Reset to empty
+            jsonld_graph = load_knowledge_graph(context.startup_prompts, verbose_mode=context.verbose_mode)
+            context.kg_labels = []
+            for item in jsonld_graph.get('@graph', []):
+                if item.get('@type') == 'Class' and '@id' in item:
+                    context.kg_labels.append(item['@id'])
+            context.kg_context = ""  # Reset to empty
+            context.jsonld_graph = jsonld_graph
+            if context.verbose_mode >= 1:
                 click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded with {len(context.kg_labels)} class labels.{Style.RESET_ALL}")
-                context.verbose_mode = original_verbose_mode  # Restore original setting
-            elif prompt == "/mode:verbose 0":
-                context.verbose_mode = 0
-                click.echo(f"{Style.BRIGHT}Verbose mode: Standard (0){Style.RESET_ALL}")
-            elif prompt == "/mode:verbose 1":
-                context.verbose_mode = 1
-                click.echo(f"{Style.BRIGHT}Verbose mode: Verbose (1){Style.RESET_ALL}")
-            elif prompt == "/mode:verbose 2":
-                context.verbose_mode = 2
-                click.echo(f"{Style.BRIGHT}Verbose mode: Extreme (2){Style.RESET_ALL}")
-            elif prompt == "/mode:test" and not in_test_mode:
-                in_test_mode = True
-                if context.verbose_mode >= 1:
-                    click.echo(f"{Style.BRIGHT}Now entering Test Mode. Requests will be sent to Grok-3 and the MCP Service as JSON.{Style.RESET_ALL}")
-                    click.echo(f"{Style.BRIGHT}Type /back to return to MCP mode, or /exit to quit CLI.{Style.RESET_ALL}")
-                if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}Startup prompts:{Style.RESET_ALL}")
-                    for prompt_entry in context.startup_prompts:
-                        if isinstance(prompt_entry, dict):
-                            if "name" in prompt_entry and prompt_entry["name"] == "get-kg":
-                                click.echo(f"{Fore.YELLOW}  get-kg: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
-                            elif "content" in prompt_entry:
-                                click.echo(f"{Fore.YELLOW}  content: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
-            elif prompt == "/back" and in_test_mode:
-                in_test_mode = False
-                if context.verbose_mode >= 1:
-                    click.echo(f"{Style.BRIGHT}Returning to MCP Mode.{Style.RESET_ALL}")
-            elif prompt == "/back" and not in_test_mode:
-                if context.verbose_mode >= 1:
-                    click.echo(f"{Style.BRIGHT}Connection to Grok AI Endpoint closed.{Style.RESET_ALL}")
-                    if mcp_ok:
-                        click.echo(f"{Style.BRIGHT}Connection to MCP Service Endpoint closed.{Style.RESET_ALL}")
-                break
-            elif prompt == "/exit":
-                if context.verbose_mode >= 1:
-                    click.echo(f"{Style.BRIGHT}Exiting CLI...{Style.RESET_ALL}")
-                return True  # Signal exit to main CLI
-            else:
-                click.echo(f"{Fore.RED}Invalid Command: {prompt}{Style.RESET_ALL}")
-                click.echo(f"{Style.BRIGHT}Type /help for available commands.{Style.RESET_ALL}")
+        elif prompt == "/mode:verbose 0":
+            context.verbose_mode = 0
+            click.echo(f"{Style.BRIGHT}Verbose mode: Standard (0){Style.RESET_ALL}")
+        elif prompt == "/mode:verbose 1":
+            context.verbose_mode = 1
+            click.echo(f"{Style.BRIGHT}Verbose mode: Verbose (1){Style.RESET_ALL}")
+        elif prompt == "/mode:verbose 2":
+            context.verbose_mode = 2
+            click.echo(f"{Style.BRIGHT}Verbose mode: Extreme (2){Style.RESET_ALL}")
+        elif prompt == "/mode:test" and not in_test_mode:
+            in_test_mode = True
+            if context.verbose_mode >= 1:
+                click.echo(f"{Style.BRIGHT}Now entering Test Mode. Requests will be sent to Grok-3 and MCP services.{Style.RESET_ALL}")
+                click.echo(f"{Style.BRIGHT}Type /back to return to MCP mode, or /exit to quit CLI.{Style.RESET_ALL}")
+            if context.verbose_mode >= 2:
+                click.echo(f"{Fore.YELLOW}Processing startup prompts:{Style.RESET_ALL}")
+                for prompt_entry in context.startup_prompts:
+                    if isinstance(prompt_entry, dict):
+                        if "name" in prompt_entry and prompt_entry["name"] == "get-kg":
+                            click.echo(f"{Fore.YELLOW}  get-kg: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
+                        elif "name" in prompt_entry:
+                            click.echo(f"{Fore.YELLOW}  {prompt_entry.get('name')}: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
+                        else:
+                            click.echo(f"{Fore.YELLOW}  content: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
+        elif prompt == "/back" and in_test_mode:
+            in_test_mode = False
+            if context.verbose_mode >= 1:
+                click.echo(f"{Style.BRIGHT}Returning to MCP Mode.{Style.RESET_ALL}")
+        elif prompt == "/back" and not in_test_mode:
+            if context.verbose_mode >= 1:
+                click.echo(f"{Style.BRIGHT}Connection to Grok AI Endpoint closed.{Style.RESET_ALL}")
+                if mcp_ok:
+                    click.echo(f"{Style.BRIGHT}Connection to MCP AI Endpoint \"Little LLM\" closed.{Style.RESET_ALL}")
+            break
+        elif prompt == "/exit":
+            if context.verbose_mode >= 1:
+                click.echo(f"{Style.BRIGHT}Exiting CLI...{Style.RESET_ALL}")
+            return True  # Signal exit to main CLI
         elif in_test_mode:
             try:
+                # Debug KG labels
+                if context.verbose_mode >= 1:
+                    click.echo(f"{Fore.YELLOW}KG Labels Count: {len(context.kg_labels)}{Style.RESET_ALL}")
+                if context.verbose_mode >= 2:
+                    click.echo(f"{Fore.YELLOW}KG Labels: {context.kg_labels[:10]}{Style.RESET_ALL}")
+
                 # Fuzzy match KG labels
-                kg_matches, _ = fuzzy_match_query(prompt, context.kg_labels, verbose_mode=context.verbose_mode, fuzzy_threshold=context.fuzzy_threshold)
+                kg_matches, fuzzy_scores = fuzzy_match_query(prompt, context.kg_labels, verbose_mode=context.verbose_mode, fuzzy_threshold=context.fuzzy_threshold)
+                if context.verbose_mode >= 2:
+                    click.echo(f"{Fore.YELLOW}Fuzzy Match Scores (all labels):{Style.RESET_ALL}")
+                    all_scores = [(label, fuzz.token_sort_ratio(prompt.lower(), label.lower())) for label in context.kg_labels]
+                    all_scores.sort(key=lambda x: x[1], reverse=True)
+                    for label, score in all_scores[:5]:  # Top 5 scores
+                        click.echo(f"{Fore.YELLOW}  {label}: {score:.1f}{Style.RESET_ALL}")
                 context.kg_context = ", ".join(str(m) for m in kg_matches) if kg_matches else ""
                 if not isinstance(context.kg_context, str):
                     if context.verbose_mode >= 1:
                         click.echo(f"{Fore.RED}Invalid KG context type: {type(context.kg_context)}{Style.RESET_ALL}")
                     context.kg_context = ""
                 if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}KG context: {context.kg_context or '<No KG Matches>'}{Style.RESET_ALL}")
+                    click.echo(f"{Fore.YELLOW}KG context: {context.kg_context or '<No KG tokens>'}{Style.RESET_ALL}")
 
                 # Fuzzy match prior messages
                 history_matches, fuzzy_matches = fuzzy_match_query(prompt, context.memory, key="content", verbose_mode=context.verbose_mode, fuzzy_threshold=context.fuzzy_threshold)
@@ -180,7 +192,7 @@ def run_mcp_mode(context, session):
                             click.echo(f"{Fore.RED}Invalid message format in payload: {msg}{Style.RESET_ALL}")
                         continue
 
-                # Log tokens before Grok-3 request
+                # Log tokens before Big LLM request
                 log_token_breakdown(context, user_prompt=prompt)
                 log_token_content(context, user_prompt=prompt)
 
@@ -250,4 +262,4 @@ def run_mcp_mode(context, session):
                 click.echo(f"{Fore.RED}Error communicating with API: {e}{Style.RESET_ALL}")
         else:
             if context.verbose_mode >= 1:
-                click.echo(f"{Fore.YELLOW}Input ignored in MCP mode. Enter /mode:test to send requests, or use / for commands.{Style.RESET_ALL}")
+                click.echo(f"{Fore.YELLOW}Input ignored in MCP mode. Enter /mode:test to send requests.{Style.RESET_ALL}")

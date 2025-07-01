@@ -50,20 +50,20 @@ def fedsrv_cli():
     click.echo(f"{Style.BRIGHT}Use /help if needed{Style.RESET_ALL}")
     
     config = load_config()
-    grok_config = config["mcp"]["grok-ai-config"]
-    mcp_config = config["mcp"]["mcp-service-config"]
-    cli_config = config["mcp"].get("cli-config", {})
+    grok_config = config["mcp"]["grok-ai"]
+    mcp_config = config["mcp"]["mcp-service"]
+    cli_config = config["mcp"].get("cli", {})
+    kg_url = config.get("knowledge-graph", {}).get("url", "")
 
     # CLI settings from config
     version = cli_config.get("version", "0.1")
     max_history = cli_config.get("max-history", 10)
     token_limit = cli_config.get("max-tokens", 131072)
-    fuzzy_threshold = cli_config.get("fuzzy-threshold", 70)
+    fuzzy_threshold = config.get("knowledge-graph", {}).get("fuzzy-threshold", 70)
     verbose_mode = cli_config.get("verbose-mode", 0)
 
-    # Load Knowledge Graph from startup-prompts
-    startup_prompts = grok_config.get("startup-prompts", [])
-    jsonld_graph = load_knowledge_graph(startup_prompts, verbose_mode=verbose_mode)
+    # Load Knowledge Graph from url
+    jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
     
     # Extract kg_labels from JSON-LD graph
     kg_labels = []
@@ -75,6 +75,7 @@ def fedsrv_cli():
     memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
     kg_context = ""  # Empty at startup
     system_prompts = grok_config.get("system-prompts", [])
+    startup_prompts = grok_config.get("startup-prompts", [])
     combined_system_prompt = "\n".join(prompt.get("content", "") for prompt in system_prompts if isinstance(prompt, dict) and "content" in prompt) if system_prompts else ""
 
     # Initialize context
@@ -141,11 +142,11 @@ def fedsrv_cli():
                     original_verbose_mode = context.verbose_mode
                     context.verbose_mode = max(1, context.verbose_mode)  # Use at least Verbose Mode 1
                     click.echo(f"{Style.BRIGHT}Reloading Knowledge Graph...{Style.RESET_ALL}")
-                    jsonld_graph = load_knowledge_graph(context.startup_prompts, verbose_mode=context.verbose_mode)
+                    jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=context.verbose_mode)
                     context.kg_labels = []
                     for item in jsonld_graph.get('@graph', []):
                         if item.get('@type') == 'Class' and '@id' in item:
-                            context.kg_labels.append(item['@id'])
+                            kg_labels.append(item['@id'])
                     context.kg_context = ""  # Reset to empty
                     click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded with {len(context.kg_labels)} class labels.{Style.RESET_ALL}")
                     context.verbose_mode = original_verbose_mode  # Restore original setting

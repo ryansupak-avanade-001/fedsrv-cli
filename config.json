@@ -1,29 +1,32 @@
 {
+	"knowledge-graph": {
+			"url": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx",
+			"fuzzy-threshold":70
+		},
+	"osdu-config": {
+			"schema-root": "https://community.opengroup.org/osdu/data/data-definitions/-/raw/master/Authoring/master-data"
+},
     "mcp": {
-        "grok-ai-config": {
+        "grok-ai": {
             "api_key": "",
             "endpoint": "https://api.x.ai/v1/chat/completions",
             "model": "grok-3",
-            "startup-prompts": [
+            "system-prompts": [
                 {
-                    "name": "get-kg",
-                    "content": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx"
-                },
-                {
+					"name": "default",
                     "content": "You are an expert in parsing natural language into atomic JSON commands compliant with Anthropic's MCP standards, e.g., {'command': 'list_wells'}, [{'command': 'filter_wells', 'params': {'region': 'North Sea'}}], {'command': 'tools/list'}, {'command': 'resources/read', 'params': {'id': '123'}}. Respond only with valid JSON."
                 }
             ]
         },
-        "mcp-service-config": {
+        "mcp-service": {
             "api_key": "your_mcp_api_key_here",
             "endpoint": "your_mcp_endpoint_here"
         },
-        "cli-config": {
+        "cli": {
             "version": "0.1",
             "max-history": 10,
             "max-tokens": 131072,
-            "fuzzy-threshold": 70,
-            "verbose-mode": 0
+            "verbose-mode": 1
         }
     }
 }

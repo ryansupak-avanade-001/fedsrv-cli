@@ -16,10 +16,10 @@ def validate_xml(content):
     except xml.sax.SAXParseException as e:
         return False, str(e)
 
-def load_knowledge_graph(startup_prompts, verbose_mode=0):
-    """Load Knowledge Graph from startup-prompts where name='get-kg'."""
+def load_knowledge_graph(kg_url: str = None, verbose_mode: int = 0) -> dict:
+    """Load Knowledge Graph from a URL or file specified in kg_url."""
     config = load_config()
-    cli_config = config["mcp"].get("cli-config", {})
+    cli_config = config["mcp"].get("cli", {})
     xml_search_paths = cli_config.get("xml_search_paths", {})
     class_paths = xml_search_paths.get("class_paths", ["Declaration/Class"])
     subclass_paths = xml_search_paths.get("subclass_paths", ["SubClassOf"])
@@ -31,15 +31,9 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
     object_min_cardinality_paths = xml_search_paths.get("object_min_cardinality_paths", ["SubClassOf"])
     object_union_paths = xml_search_paths.get("object_union_paths", ["ObjectPropertyDomain/ObjectUnionOf"])
 
-    kg_endpoint = None
-    for prompt in startup_prompts:
-        if prompt.get("name") == "get-kg" and "content" in prompt:
-            kg_endpoint = prompt["content"]
-            break
-
-    if not kg_endpoint:
+    if not kg_url:
         if verbose_mode >= 1:
-            click.echo(f"{Fore.YELLOW}No get-kg endpoint found in startup-prompts{Style.RESET_ALL}")
+            click.echo(f"{Fore.YELLOW}No KG URL found in configuration{Style.RESET_ALL}")
         return {"@graph": []}
 
     jsonld_graph = {"@graph": []}
@@ -48,13 +42,13 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
     raw_content = None
 
     try:
-        if kg_endpoint.startswith(("http://", "https://")):
+        if kg_url.startswith(("http://", "https://")):
             max_retries = 3
             for attempt in range(1, max_retries + 1):
                 if verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}Attempting to connect to {kg_endpoint} (Attempt {attempt}/{max_retries}){Style.RESET_ALL}")
+                    click.echo(f"{Fore.YELLOW}Attempting to connect to {kg_url} (Attempt {attempt}/{max_retries}){Style.RESET_ALL}")
                 try:
-                    response = requests.get(kg_endpoint, timeout=10)
+                    response = requests.get(kg_url, timeout=10)
                     response.raise_for_status()
                     raw_content = response.content
                     break
@@ -63,7 +57,7 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
                         click.echo(f"{Fore.YELLOW}Connection attempt {attempt} failed: {str(e)}{Style.RESET_ALL}")
                     if attempt == max_retries:
                         if verbose_mode >= 1:
-                            click.echo(f"{Fore.RED}Failed to connect to {kg_endpoint} after {max_retries} attempts{Style.RESET_ALL}")
+                            click.echo(f"{Fore.RED}Failed to connect to {kg_url} after {max_retries} attempts{Style.RESET_ALL}")
                         return jsonld_graph
             encoding_info = chardet.detect(raw_content)
             encoding = encoding_info['encoding'] or 'utf-8'
@@ -73,8 +67,8 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
                 if verbose_mode >= 1:
                     click.echo(f"{Fore.YELLOW}KG file is empty or invalid{Style.RESET_ALL}")
                 return jsonld_graph
-        elif kg_endpoint.startswith("file://"):
-            local_path = kg_endpoint.replace("file://", "")
+        elif kg_url.startswith("file://"):
+            local_path = kg_url.replace("file://", "")
             if not os.path.exists(local_path):
                 if verbose_mode >= 1:
                     click.echo(f"{Fore.YELLOW}KG file {local_path} does not exist{Style.RESET_ALL}")
@@ -93,12 +87,12 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
                     if verbose_mode >= 1:
                         click.echo(f"{Fore.YELLOW}KG file is empty or invalid{Style.RESET_ALL}")
                     return jsonld_graph
-        elif os.path.exists(kg_endpoint):
-            if os.path.getsize(kg_endpoint) > max_file_size:
+        elif os.path.exists(kg_url):
+            if os.path.getsize(kg_url) > max_file_size:
                 if verbose_mode >= 1:
                     click.echo(f"{Fore.YELLOW}KG file exceeds size limit ({max_file_size / 1024 / 1024}MB){Style.RESET_ALL}")
                 return jsonld_graph
-            with open(kg_endpoint, 'rb') as f:
+            with open(kg_url, 'rb') as f:
                 raw_content = f.read()
                 encoding_info = chardet.detect(raw_content)
                 encoding = encoding_info['encoding'] or 'utf-8'
@@ -110,10 +104,10 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
                     return jsonld_graph
         else:
             if verbose_mode >= 1:
-                click.echo(f"{Fore.YELLOW}KG endpoint {kg_endpoint} is neither a valid URL nor local file{Style.RESET_ALL}")
+                click.echo(f"{Fore.YELLOW}KG endpoint {kg_url} is neither a valid URL nor local file{Style.RESET_ALL}")
             return jsonld_graph
 
-        if kg_endpoint.lower().endswith(('.owx', '.owl', '.xml')):
+        if kg_url.lower().endswith(('.owx', '.owl', '.xml')):
             is_valid, xml_error = validate_xml(kg_content)
             if not is_valid:
                 if verbose_mode >= 1:
@@ -121,7 +115,7 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
                 return jsonld_graph
             try:
                 if verbose_mode >= 1:
-                    click.echo(f"{Fore.YELLOW}Loaded Knowledge Graph as generic XML from {kg_endpoint}{Style.RESET_ALL}")
+                    click.echo(f"{Fore.YELLOW}Loaded Knowledge Graph as generic XML from {kg_url}{Style.RESET_ALL}")
                 if verbose_mode >= 2:
                     click.echo(f"{Fore.YELLOW}XML content (first 10 lines): {content_lines[:10]}{Style.RESET_ALL}")
                 root = ET.fromstring(kg_content)
@@ -331,10 +325,10 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
                 if verbose_mode >= 1:
                     click.echo(f"{Fore.RED}Failed to parse XML: {e}{Style.RESET_ALL}")
                 return jsonld_graph
-        elif kg_endpoint.lower().endswith('.jsonld'):
+        elif kg_url.lower().endswith('.jsonld'):
             try:
                 if verbose_mode >= 1:
-                    click.echo(f"{Fore.YELLOW}Loaded Knowledge Graph as JSON-LD from {kg_endpoint}{Style.RESET_ALL}")
+                    click.echo(f"{Fore.YELLOW}Loaded Knowledge Graph as JSON-LD from {kg_url}{Style.RESET_ALL}")
                 json_data = json.loads(kg_content)
                 class_count = sum(1 for item in json_data.get('@graph', []) if item.get('@type') == 'Class')
                 subclass_count = sum(1 for item in json_data.get('@graph', []) if item.get('rdfs:subClassOf'))
@@ -362,7 +356,7 @@ def load_knowledge_graph(startup_prompts, verbose_mode=0):
                 return jsonld_graph
         else:
             if verbose_mode >= 1:
-                click.echo(f"{Fore.YELLOW}Unsupported file format for {kg_endpoint}{Style.RESET_ALL}")
+                click.echo(f"{Fore.YELLOW}Unsupported file format for {kg_url}{Style.RESET_ALL}")
             return jsonld_graph
 
     except Exception as e:
