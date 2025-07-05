@@ -35,6 +35,7 @@ prompt_style = PromptStyle.from_dict({
 class CliContext:
     memory: list
     kg_context: str
+    jsonld_graph: dict  # Added to store JSON-LD graph for fuzzy search
     combined_system_prompt: str
     verbose_mode: int
     token_limit: int
@@ -69,8 +70,6 @@ def fedsrv_cli():
 
     # Load Knowledge Graph from url
     jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
-    # Note: kg_labels extraction intentionally removed to simplify context management
-    # Previously used for fuzzy matching in MCP mode; ensure fedsrv_cli_mcp.py is updated if needed
     
     # Initialize memory and KG context
     memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
@@ -82,6 +81,7 @@ def fedsrv_cli():
     context = CliContext(
         memory=memory,
         kg_context=kg_context,
+        jsonld_graph=jsonld_graph,  # Added to provide JSON-LD for fuzzy search
         combined_system_prompt=combined_system_prompt,
         verbose_mode=verbose_mode,
         token_limit=token_limit,
@@ -146,6 +146,7 @@ def fedsrv_cli():
                     click.echo(f"{Style.BRIGHT}Reloading Knowledge Graph...{Style.RESET_ALL}")
                     jsonld_graph = load_knowledge_graph(kg_url=context.kg_url, verbose_mode=context.verbose_mode)
                     context.kg_context = ""  # Reset to empty
+                    context.jsonld_graph = jsonld_graph  # Update context with new JSON-LD graph
                     click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded.{Style.RESET_ALL}")
                     context.verbose_mode = original_verbose_mode  # Restore original setting
                 elif command == "/mcp":

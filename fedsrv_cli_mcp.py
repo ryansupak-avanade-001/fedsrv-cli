@@ -1,6 +1,8 @@
-#fedsrv_cli_mcp
+#fedsrv_cli_mcp.py
+#818b2c14-fb15-4899-bd5d-e622bbc391dd
 import click
 import json
+import re  # Added for query word splitting
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.styles import Style as PromptStyle
@@ -76,14 +78,10 @@ def run_mcp_mode(context, session):
             if context.verbose_mode >= 1:
                 click.echo(f"{Style.BRIGHT}Reloading Knowledge Graph...{Style.RESET_ALL}")
             jsonld_graph = load_knowledge_graph(kg_url=context.kg_url, verbose_mode=context.verbose_mode)
-            context.kg_labels = []
-            for item in jsonld_graph.get('@graph', []):
-                if item.get('@type') == 'Class' and '@id' in item:
-                    context.kg_labels.append(item['@id'])
+            context.jsonld_graph = jsonld_graph  # Update context with new JSON-LD graph
             context.kg_context = ""  # Reset to empty
-            context.jsonld_graph = jsonld_graph
             if context.verbose_mode >= 1:
-                click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded with {len(context.kg_labels)} class labels.{Style.RESET_ALL}")
+                click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded.{Style.RESET_ALL}")
         elif prompt == "/mode:verbose 0":
             context.verbose_mode = 0
             click.echo(f"{Style.BRIGHT}Verbose mode: Standard (0){Style.RESET_ALL}")
@@ -114,27 +112,53 @@ def run_mcp_mode(context, session):
             return True  # Signal exit to main CLI
         elif in_test_mode:
             try:
-                # Debug KG labels
-                if context.verbose_mode >= 1:
-                    click.echo(f"{Fore.YELLOW}KG Labels Count: {len(context.kg_labels)}{Style.RESET_ALL}")
-                if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}KG Labels: {context.kg_labels[:10]}{Style.RESET_ALL}")
+                # Extract attribute values from jsonld_graph except @type, storing matched sub-element
+                kg_items = []
+                for idx, item in enumerate(context.jsonld_graph.get('@graph', [])):
+                    for key, value in item.items():
+                        if key != '@type':
+                            if isinstance(value, str):
+                                kg_items.append((value, value, idx))  # Store string value with index
+                            elif isinstance(value, dict) and '@id' in value:
+                                kg_items.append((value['@id'], value, idx))  # Store dict with @id
+                            elif isinstance(value, list):
+                                for subitem in value:
+                                    if isinstance(subitem, dict) and '@id' in subitem:
+                                        kg_items.append((subitem['@id'], subitem, idx))  # Store nested dict
 
-                # Fuzzy match KG labels
-                kg_matches, fuzzy_scores = fuzzy_match_query(prompt, context.kg_labels, verbose_mode=context.verbose_mode, fuzzy_threshold=context.fuzzy_threshold)
+                # Split prompt into words, stripping non-alphanumeric characters
+                words = [re.sub(r'[^a-zA-Z0-9]', '', word.lower()) for word in prompt.split() if re.sub(r'[^a-zA-Z0-9]', '', word)]
                 if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}Fuzzy Match Scores (all labels):{Style.RESET_ALL}")
-                    all_scores = [(label, fuzz.token_sort_ratio(prompt.lower(), label.lower())) for label in context.kg_labels]
-                    all_scores.sort(key=lambda x: x[1], reverse=True)
-                    for label, score in all_scores[:5]:  # Top 5 scores
-                        click.echo(f"{Fore.YELLOW}  {label}: {score:.1f}{Style.RESET_ALL}")
-                context.kg_context = ", ".join(str(m) for m in kg_matches) if kg_matches else ""
+                    click.echo(f"{Fore.YELLOW}Query words for fuzzy search: {words}{Style.RESET_ALL}")
+
+                # Fuzzy match each word individually
+                all_matches = []
+                for word in words:
+                    matches, fuzzy_scores = fuzzy_match_query(word, [item[0] for item in kg_items], verbose_mode=context.verbose_mode, fuzzy_threshold=context.fuzzy_threshold)
+                    all_matches.extend([(kg_items[i][1], score, kg_items[i][2]) for i, (value, score) in enumerate(fuzzy_scores) if value == kg_items[i][0]])
+
+                # Deduplicate matches by exact JSON equality and index
+                match_dict = {}
+                for item, score, idx in all_matches:
+                    item_json = json.dumps((item, idx), sort_keys=True)  # Include index for uniqueness
+                    if item_json not in match_dict or score > match_dict[item_json][1]:
+                        match_dict[item_json] = (item, score)
+                matched_elements = [item for item, _ in match_dict.values()]
+
+                # Log matches in verbose mode
+                if context.verbose_mode >= 1:
+                    click.echo(f"{Fore.YELLOW}Total fuzzy matches: {len(matched_elements)}{Style.RESET_ALL}")
+                if context.verbose_mode >= 2:
+                    click.echo(f"{Fore.YELLOW}Fuzzy matched KG elements: {len(matched_elements)}{Style.RESET_ALL}")
+                    for item, score in match_dict.values():  # Show all matches
+                        click.echo(f"{Fore.YELLOW}  {json.dumps(item, indent=2)} (Score: {score:.1f}){Style.RESET_ALL}")
+
+                # Set kg_context to matched elements as JSON
+                context.kg_context = json.dumps(matched_elements) if matched_elements else ""
                 if not isinstance(context.kg_context, str):
                     if context.verbose_mode >= 1:
                         click.echo(f"{Fore.RED}Invalid KG context type: {type(context.kg_context)}{Style.RESET_ALL}")
                     context.kg_context = ""
-                if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}KG context: {context.kg_context or '<No KG tokens>'}{Style.RESET_ALL}")
 
                 # Fuzzy match prior messages
                 history_matches, fuzzy_matches = fuzzy_match_query(prompt, context.memory, key="content", verbose_mode=context.verbose_mode, fuzzy_threshold=context.fuzzy_threshold)
