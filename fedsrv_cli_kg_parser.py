@@ -1,4 +1,5 @@
-#fedsrv_cli_kg_parser
+#fedsrv_cli_kg_parser.py
+#7b3b4e9f-2b7d-4f2a-9c5b-4e8b6b2c3f1a
 import requests
 import xml.etree.ElementTree as ET
 import xml.sax
@@ -311,6 +312,13 @@ def load_knowledge_graph(kg_url: str = None, verbose_mode: int = 0) -> dict:
                                     "value": literal_value
                                 })
 
+                # Save JSON-LD to logs/knowledge-graph.json
+                os.makedirs("logs", exist_ok=True)  # Create logs directory if it doesn't exist
+                with open("logs/knowledge-graph.json", "w", encoding="utf-8") as f:
+                    json.dump(jsonld_graph, f, indent=2)
+                if verbose_mode >= 1:
+                    click.echo(f"{Fore.YELLOW}Saved JSON-LD Knowledge Graph to logs/knowledge-graph.json{Style.RESET_ALL}")
+
                 if verbose_mode >= 1:
                     click.echo(f"{Fore.YELLOW}Converted {class_count} classes to JSON-LD{Style.RESET_ALL}")
                     click.echo(f"{Fore.YELLOW}Converted {object_property_count} standalone object properties to JSON-LD{Style.RESET_ALL}")
@@ -340,6 +348,12 @@ def load_knowledge_graph(kg_url: str = None, verbose_mode: int = 0) -> dict:
                 annotation_assertion_count = sum(1 for item in json_data.get('@graph', []) if item.get('@type') == 'AnnotationAssertion')
                 object_min_cardinality_count = sum(1 for item in json_data.get('@graph', []) if item.get('@type') == 'DataMinCardinality')
                 object_union_count = sum(1 for item in json_data.get('@graph', []) if item.get('@type') == 'ObjectUnionOf')
+                # Save JSON-LD to logs/knowledge-graph.json
+                os.makedirs("logs", exist_ok=True)  # Create logs directory if it doesn't exist
+                with open("logs/knowledge-graph.json", "w", encoding="utf-8") as f:
+                    json.dump(json_data, f, indent=2)
+                if verbose_mode >= 1:
+                    click.echo(f"{Fore.YELLOW}Saved JSON-LD Knowledge Graph to logs/knowledge-graph.json{Style.RESET_ALL}")
                 if verbose_mode >= 1:
                     click.echo(f"{Fore.YELLOW}Converted {class_count} classes to JSON-LD{Style.RESET_ALL}")
                     click.echo(f"{Fore.YELLOW}Converted {object_property_count} standalone object properties to JSON-LD{Style.RESET_ALL}")

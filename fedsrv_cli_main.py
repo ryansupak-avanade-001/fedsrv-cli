@@ -1,4 +1,5 @@
-#fedsrv_cli_main
+#fedsrv_cli_main.py
+#a7814e76-58c2-4a8e-abdb-c455cd82abb4
 import click
 import json
 import os
@@ -34,7 +35,6 @@ prompt_style = PromptStyle.from_dict({
 class CliContext:
     memory: list
     kg_context: str
-    kg_labels: list
     combined_system_prompt: str
     verbose_mode: int
     token_limit: int
@@ -69,17 +69,9 @@ def fedsrv_cli():
 
     # Load Knowledge Graph from url
     jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
+    # Note: kg_labels extraction intentionally removed to simplify context management
+    # Previously used for fuzzy matching in MCP mode; ensure fedsrv_cli_mcp.py is updated if needed
     
-    # Extract kg_labels from JSON-LD graph
-    kg_labels = []
-    for item in jsonld_graph.get('@graph', []):
-        if item.get('@type') == 'Class' and '@id' in item:
-            kg_labels.append(item['@id'])
-
-    # Log KG loading status explicitly in Verbose Mode 1 or higher
-    if verbose_mode >= 1:
-        click.echo(f"{Fore.YELLOW}Knowledge Graph loaded with {len(kg_labels)} class labels{Style.RESET_ALL}")
-
     # Initialize memory and KG context
     memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
     kg_context = ""  # Empty at startup
@@ -90,7 +82,6 @@ def fedsrv_cli():
     context = CliContext(
         memory=memory,
         kg_context=kg_context,
-        kg_labels=kg_labels,
         combined_system_prompt=combined_system_prompt,
         verbose_mode=verbose_mode,
         token_limit=token_limit,
@@ -154,12 +145,8 @@ def fedsrv_cli():
                     context.verbose_mode = max(1, context.verbose_mode)  # Use at least Verbose Mode 1
                     click.echo(f"{Style.BRIGHT}Reloading Knowledge Graph...{Style.RESET_ALL}")
                     jsonld_graph = load_knowledge_graph(kg_url=context.kg_url, verbose_mode=context.verbose_mode)
-                    context.kg_labels = []
-                    for item in jsonld_graph.get('@graph', []):
-                        if item.get('@type') == 'Class' and '@id' in item:
-                            kg_labels.append(item['@id'])
                     context.kg_context = ""  # Reset to empty
-                    click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded with {len(context.kg_labels)} class labels.{Style.RESET_ALL}")
+                    click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded.{Style.RESET_ALL}")
                     context.verbose_mode = original_verbose_mode  # Restore original setting
                 elif command == "/mcp":
                     if run_mcp_mode(context, session):  # Returns True if /exit was called
