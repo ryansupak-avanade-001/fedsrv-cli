@@ -54,7 +54,7 @@ def fedsrv_cli():
     config = load_config()
     grok_config = config["mcp"]["grok-ai"]
     mcp_config = config["mcp"]["mcp-service"]
-    cli_config = config["mcp"].get("cli", {})
+    cli_config = config.get("cli", {})  # Directly access top-level 'cli' from config.json
     kg_url = config.get("knowledge-graph", {}).get("url", "")
 
     # CLI settings from config
@@ -62,7 +62,10 @@ def fedsrv_cli():
     max_history = cli_config.get("max-history", 10)
     token_limit = cli_config.get("max-tokens", 131072)
     fuzzy_threshold = config.get("knowledge-graph", {}).get("fuzzy-threshold", 70)
-    verbose_mode = cli_config.get("verbose-mode", 0)
+    verbose_mode = cli_config.get("verbose-mode", 0)  # Get verbose-mode from cli_config
+
+    # Log verbose mode at startup to confirm setting
+    click.echo(f"{Fore.YELLOW}/mode:verbose is set to {verbose_mode}{Style.RESET_ALL}")
 
     # Load Knowledge Graph from url
     jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
@@ -72,6 +75,10 @@ def fedsrv_cli():
     for item in jsonld_graph.get('@graph', []):
         if item.get('@type') == 'Class' and '@id' in item:
             kg_labels.append(item['@id'])
+
+    # Log KG loading status explicitly in Verbose Mode 1 or higher
+    if verbose_mode >= 1:
+        click.echo(f"{Fore.YELLOW}Knowledge Graph loaded with {len(kg_labels)} class labels{Style.RESET_ALL}")
 
     # Initialize memory and KG context
     memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
@@ -94,8 +101,11 @@ def fedsrv_cli():
         kg_url=kg_url
     )
 
-    # Log tokens at startup (use configured verbose_mode)
-    log_token_breakdown(context)
+    # Log tokens at startup (force token breakdown in Verbose Mode 1 or higher)
+    if verbose_mode >= 1:
+        log_token_breakdown(context)
+    else:
+        log_token_breakdown(context)  # Existing call, retained for compatibility
     log_token_content(context)
 
     # Initialize command history

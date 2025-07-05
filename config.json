@@ -2,7 +2,7 @@
 	"cli":
 	{
         "version": "0.1",
-    	"verbose-mode": 2
+    	"verbose-mode":2 
     },
 	"knowledge-graph":
 	{
