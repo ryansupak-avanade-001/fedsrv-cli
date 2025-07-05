@@ -1,3 +1,4 @@
+#fedsrv_cli_mcp
 import click
 import json
 from prompt_toolkit import PromptSession
@@ -23,18 +24,6 @@ def run_mcp_mode(context, session):
     
     if context.verbose_mode >= 1:
         click.echo(f"{Style.BRIGHT}Now entering MCP Mode. In this mode, all text entered will be sent directly to the MCP as-is.{Style.RESET_ALL}")
-    
-    # Process startup-prompts (log only)
-    if context.startup_prompts and isinstance(context.startup_prompts, list):
-        for prompt in context.startup_prompts:
-            if isinstance(prompt, dict) and "content" in prompt:
-                if context.verbose_mode >= 2:
-                    if prompt.get("name") == "get-kg":
-                        click.echo(f"{Fore.YELLOW}  get-kg: {prompt.get('content', '')}{Style.RESET_ALL}")
-                    elif "name" in prompt:
-                        click.echo(f"{Fore.YELLOW}  {prompt.get('name')}: {prompt.get('content', '')}{Style.RESET_ALL}")
-                    else:
-                        click.echo(f"{Fore.YELLOW}  content: {prompt.get('content', '')}{Style.RESET_ALL}")
     
     grok_headers = {"Authorization": f"Bearer {context.grok_config.get('api_key')}", "Content-Type": "application/json"}
     mcp_headers = {"x-functions-key": context.mcp_config.get('api_key'), "Content-Type": "application/json"}
@@ -86,7 +75,7 @@ def run_mcp_mode(context, session):
         elif prompt == "/reload-kg":
             if context.verbose_mode >= 1:
                 click.echo(f"{Style.BRIGHT}Reloading Knowledge Graph...{Style.RESET_ALL}")
-            jsonld_graph = load_knowledge_graph(context.startup_prompts, verbose_mode=context.verbose_mode)
+            jsonld_graph = load_knowledge_graph(kg_url=context.kg_url, verbose_mode=context.verbose_mode)
             context.kg_labels = []
             for item in jsonld_graph.get('@graph', []):
                 if item.get('@type') == 'Class' and '@id' in item:
@@ -109,16 +98,6 @@ def run_mcp_mode(context, session):
             if context.verbose_mode >= 1:
                 click.echo(f"{Style.BRIGHT}Now entering Test Mode. Requests will be sent to Grok-3 and MCP services.{Style.RESET_ALL}")
                 click.echo(f"{Style.BRIGHT}Type /back to return to MCP mode, or /exit to quit CLI.{Style.RESET_ALL}")
-            if context.verbose_mode >= 2:
-                click.echo(f"{Fore.YELLOW}Processing startup prompts:{Style.RESET_ALL}")
-                for prompt_entry in context.startup_prompts:
-                    if isinstance(prompt_entry, dict):
-                        if "name" in prompt_entry and prompt_entry["name"] == "get-kg":
-                            click.echo(f"{Fore.YELLOW}  get-kg: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
-                        elif "name" in prompt_entry:
-                            click.echo(f"{Fore.YELLOW}  {prompt_entry.get('name')}: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
-                        else:
-                            click.echo(f"{Fore.YELLOW}  content: {prompt_entry.get('content', '')}{Style.RESET_ALL}")
         elif prompt == "/back" and in_test_mode:
             in_test_mode = False
             if context.verbose_mode >= 1:

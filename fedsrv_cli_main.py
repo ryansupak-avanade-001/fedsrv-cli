@@ -42,7 +42,7 @@ class CliContext:
     max_history: int
     grok_config: dict
     mcp_config: dict
-    startup_prompts: list
+    kg_url: str
 
 @click.command()
 def fedsrv_cli():
@@ -52,17 +52,17 @@ def fedsrv_cli():
     
     # Load configuration
     config = load_config()
-    grok_config = config["mcp"]["grok-ai"]  # Matches config.json: mcp.grok-ai
-    mcp_config = config["mcp"]["mcp-service"]  # Expected but missing in provided config; preserved for logic
-    cli_config = config["mcp"].get("cli", {})  # Matches config.json: mcp.cli (optional)
-    kg_url = config.get("knowledge-graph", {}).get("url", "")  # Matches config.json: knowledge-graph.url
+    grok_config = config["mcp"]["grok-ai"]
+    mcp_config = config["mcp"]["mcp-service"]
+    cli_config = config["mcp"].get("cli", {})
+    kg_url = config.get("knowledge-graph", {}).get("url", "")
 
     # CLI settings from config
-    version = cli_config.get("version", "0.1")  # Matches config.json: cli.version
-    max_history = cli_config.get("max-history", 10)  # Matches config.json: knowledge-graph.max-history (also under cli in some configs)
-    token_limit = cli_config.get("max-tokens", 131072)  # Matches config.json: mcp.grok-ai.max-tokens (also under cli in some configs)
-    fuzzy_threshold = config.get("knowledge-graph", {}).get("fuzzy-threshold", 70)  # Matches config.json: knowledge-graph.fuzzy-threshold
-    verbose_mode = cli_config.get("verbose-mode", 0)  # Matches config.json: cli.verbose-mode
+    version = cli_config.get("version", "0.1")
+    max_history = cli_config.get("max-history", 10)
+    token_limit = cli_config.get("max-tokens", 131072)
+    fuzzy_threshold = config.get("knowledge-graph", {}).get("fuzzy-threshold", 70)
+    verbose_mode = cli_config.get("verbose-mode", 0)
 
     # Load Knowledge Graph from url
     jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
@@ -76,8 +76,7 @@ def fedsrv_cli():
     # Initialize memory and KG context
     memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
     kg_context = ""  # Empty at startup
-    system_prompts = grok_config.get("system-prompts", [])  # Matches config.json: mcp.grok-ai.system-prompts
-    startup_prompts = grok_config.get("startup-prompts", [])  # Expected but missing in provided config; preserved for logic
+    system_prompts = grok_config.get("system-prompts", [])
     combined_system_prompt = "\n".join(prompt.get("content", "") for prompt in system_prompts if isinstance(prompt, dict) and "content" in prompt) if system_prompts else ""
 
     # Initialize context
@@ -92,7 +91,7 @@ def fedsrv_cli():
         max_history=max_history,
         grok_config=grok_config,
         mcp_config=mcp_config,
-        startup_prompts=startup_prompts
+        kg_url=kg_url
     )
 
     # Log tokens at startup (use configured verbose_mode)
@@ -144,7 +143,7 @@ def fedsrv_cli():
                     original_verbose_mode = context.verbose_mode
                     context.verbose_mode = max(1, context.verbose_mode)  # Use at least Verbose Mode 1
                     click.echo(f"{Style.BRIGHT}Reloading Knowledge Graph...{Style.RESET_ALL}")
-                    jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=context.verbose_mode)
+                    jsonld_graph = load_knowledge_graph(kg_url=context.kg_url, verbose_mode=context.verbose_mode)
                     context.kg_labels = []
                     for item in jsonld_graph.get('@graph', []):
                         if item.get('@type') == 'Class' and '@id' in item:
