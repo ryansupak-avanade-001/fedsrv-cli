@@ -1,4 +1,6 @@
+backups/
 __pycache__/
 .env
 .DS_Store
 scratch
+pastebin

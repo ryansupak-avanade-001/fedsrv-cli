@@ -19,17 +19,17 @@ def validate_xml(content):
 def load_knowledge_graph(kg_url: str = None, verbose_mode: int = 0) -> dict:
     """Load Knowledge Graph from a URL or file specified in kg_url."""
     config = load_config()
-    cli_config = config["mcp"].get("cli", {})
-    xml_search_paths = cli_config.get("xml_search_paths", {})
-    class_paths = xml_search_paths.get("class_paths", ["Declaration/Class"])
-    subclass_paths = xml_search_paths.get("subclass_paths", ["SubClassOf"])
-    object_property_paths = xml_search_paths.get("object_property_paths", ["Declaration/ObjectProperty"])
-    object_property_domain_paths = xml_search_paths.get("object_property_domain_paths", ["ObjectPropertyDomain"])
-    annotation_paths = xml_search_paths.get("annotation_paths", ["Annotation"])
-    subobject_property_paths = xml_search_paths.get("subobject_property_paths", ["SubObjectPropertyOf"])
-    annotation_assertion_paths = xml_search_paths.get("annotation_assertion_paths", ["AnnotationAssertion"])
-    object_min_cardinality_paths = xml_search_paths.get("object_min_cardinality_paths", ["SubClassOf"])
-    object_union_paths = xml_search_paths.get("object_union_paths", ["ObjectPropertyDomain/ObjectUnionOf"])
+    cli_config = config["mcp"].get("cli", {})  # Matches config.json: mcp.cli (optional)
+    xml_search_paths = cli_config.get("xml_search_paths", {})  # Expected but missing in provided config; preserved with default
+    class_paths = xml_search_paths.get("class_paths", ["Declaration/Class"])  # Default preserved
+    subclass_paths = xml_search_paths.get("subclass_paths", ["SubClassOf"])  # Default preserved
+    object_property_paths = xml_search_paths.get("object_property_paths", ["Declaration/ObjectProperty"])  # Default preserved
+    object_property_domain_paths = xml_search_paths.get("object_property_domain_paths", ["ObjectPropertyDomain"])  # Default preserved
+    annotation_paths = xml_search_paths.get("annotation_paths", ["Annotation"])  # Default preserved
+    subobject_property_paths = xml_search_paths.get("subobject_property_paths", ["SubObjectPropertyOf"])  # Default preserved
+    annotation_assertion_paths = xml_search_paths.get("annotation_assertion_paths", ["AnnotationAssertion"])  # Default preserved
+    object_min_cardinality_paths = xml_search_paths.get("object_min_cardinality_paths", ["SubClassOf"])  # Default preserved
+    object_union_paths = xml_search_paths.get("object_union_paths", ["ObjectPropertyDomain/ObjectUnionOf"])  # Default preserved
 
     if not kg_url:
         if verbose_mode >= 1:
