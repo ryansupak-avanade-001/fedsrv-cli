@@ -4,6 +4,7 @@ import click
 import json
 import os
 import time  # Added for Unix timestamp
+import re  # Added for stripping ANSI codes
 from dataclasses import dataclass
 from datetime import datetime
 from prompt_toolkit import PromptSession
@@ -25,9 +26,11 @@ os.makedirs("logs", exist_ok=True)
 log_file_path = f"logs/usage-{log_timestamp}.log"
 
 def log_to_file(message):
-    """Write a message to the log file."""
+    """Write a message to the log file, stripping ANSI codes and special characters."""
+    # Remove ANSI escape codes and special characters like <0x1b>
+    clean_message = re.sub(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])|<0x[0-9a-fA-F]+>', '', str(message))
     with open(log_file_path, "a", encoding="utf-8") as f:
-        f.write(f"{datetime.now().isoformat()}: {message}\n")
+        f.write(f"{datetime.now().isoformat()}: {clean_message}\n")
 
 # Wrap click.echo to log outputs
 original_echo = click.echo
@@ -87,7 +90,9 @@ def fedsrv_cli():
     log_history = cli_config.get("log-history", 10)  # Get log-history from cli_config
 
     # Log verbose mode at startup to confirm setting
-    click.echo(f"{Fore.YELLOW}/mode:verbose is set to {verbose_mode}{Style.RESET_ALL}")
+    verbose_mode_names = {0: "Standard", 1: "Verbose", 2: "Extreme", 3: "Debug"}
+    verbose_mode_name = verbose_mode_names.get(verbose_mode, "Unknown")
+    click.echo(f"{Fore.YELLOW}/mode:verbose is set to {verbose_mode} ({verbose_mode_name}){Style.RESET_ALL}")
 
     # Load Knowledge Graph from url
     jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
