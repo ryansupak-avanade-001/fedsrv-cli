@@ -3,6 +3,7 @@
 import click
 import json
 import os
+import time  # Added for Unix timestamp
 from dataclasses import dataclass
 from datetime import datetime
 from prompt_toolkit import PromptSession
@@ -17,6 +18,24 @@ from fedsrv_cli_token_logging import log_token_breakdown, log_token_content
 from fedsrv_cli_mcp import run_mcp_mode
 
 colorama.init(autoreset=True)
+
+# Initialize log file
+log_timestamp = int(time.time())
+os.makedirs("logs", exist_ok=True)
+log_file_path = f"logs/usage-{log_timestamp}.log"
+
+def log_to_file(message):
+    """Write a message to the log file."""
+    with open(log_file_path, "a", encoding="utf-8") as f:
+        f.write(f"{datetime.now().isoformat()}: {message}\n")
+
+# Wrap click.echo to log outputs
+original_echo = click.echo
+def custom_echo(message, **kwargs):
+    original_echo(message, **kwargs)
+    log_to_file(f"OUTPUT: {message}")
+
+click.echo = custom_echo
 
 SPLASH = r"""
    ____       ______            _______   ____
@@ -44,6 +63,7 @@ class CliContext:
     grok_config: dict
     mcp_config: dict
     kg_url: str
+    log_history: int  # Added to store log-history setting
 
 @click.command()
 def fedsrv_cli():
@@ -64,12 +84,15 @@ def fedsrv_cli():
     token_limit = cli_config.get("max-tokens", 131072)
     fuzzy_threshold = config.get("knowledge-graph", {}).get("fuzzy-threshold", 70)
     verbose_mode = cli_config.get("verbose-mode", 0)  # Get verbose-mode from cli_config
+    log_history = cli_config.get("log-history", 10)  # Get log-history from cli_config
 
     # Log verbose mode at startup to confirm setting
     click.echo(f"{Fore.YELLOW}/mode:verbose is set to {verbose_mode}{Style.RESET_ALL}")
 
     # Load Knowledge Graph from url
     jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
+    # Note: kg_labels extraction intentionally removed to simplify context management
+    # Previously used for fuzzy matching in MCP mode; ensure fedsrv_cli_mcp.py is updated if needed
     
     # Initialize memory and KG context
     memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
@@ -81,7 +104,7 @@ def fedsrv_cli():
     context = CliContext(
         memory=memory,
         kg_context=kg_context,
-        jsonld_graph=jsonld_graph,  # Added to provide JSON-LD for fuzzy search
+        jsonld_graph=jsonld_graph,
         combined_system_prompt=combined_system_prompt,
         verbose_mode=verbose_mode,
         token_limit=token_limit,
@@ -89,7 +112,8 @@ def fedsrv_cli():
         max_history=max_history,
         grok_config=grok_config,
         mcp_config=mcp_config,
-        kg_url=kg_url
+        kg_url=kg_url,
+        log_history=log_history  # Added to store log-history
     )
 
     # Log tokens at startup (force token breakdown in Verbose Mode 1 or higher)
@@ -111,6 +135,7 @@ def fedsrv_cli():
             command = main_session.prompt([('class:prompt', 'fedsrv-cli> ')]).strip()
             if command:
                 main_history.append_string(command)
+                log_to_file(f"INPUT: {command}")
             
             if command.startswith("/"):
                 if command == "/help":
@@ -118,8 +143,8 @@ def fedsrv_cli():
                     click.echo("- /help: Lists all commands and a usage summary of each.")
                     click.echo("- /mcp: Enters a mode that communicates with the FedSrv MCP Service.")
                     click.echo("- /version: Displays the CLI version.")
-                    click.echo("- /mode:verbose 0/1/2: Sets verbosity (0=standard, 1=verbose, 2=extreme, currently {}).".format(context.verbose_mode))
-                    click.echo("- /show-tokens: Displays the current token breakdown (system, history, KG context, total) and content (in verbose mode 2).")
+                    click.echo("- /mode:verbose 0/1/2/3: Sets verbosity (0=standard, 1=verbose, 2=extreme, 3=debug, currently {}).".format(context.verbose_mode))
+                    click.echo("- /show-tokens: Displays the current token breakdown (system, history, KG context, total) and content (in verbose mode 2 or 3).")
                     click.echo("- /reload-kg: Reloads the knowledge graph from the configured endpoint.")
                     click.echo("- /back: Returns to this main menu from a sub-mode.")
                     click.echo("- /exit: Exits the CLI entirely.")
@@ -134,6 +159,9 @@ def fedsrv_cli():
                 elif command == "/mode:verbose 2":
                     context.verbose_mode = 2
                     click.echo(f"{Style.BRIGHT}Verbose mode: Extreme (2){Style.RESET_ALL}")
+                elif command == "/mode:verbose 3":
+                    context.verbose_mode = 3
+                    click.echo(f"{Style.BRIGHT}Verbose mode: Debug (3){Style.RESET_ALL}")
                 elif command == "/show-tokens":
                     original_verbose_mode = context.verbose_mode
                     context.verbose_mode = max(1, context.verbose_mode)  # Use at least Verbose Mode 1
@@ -145,8 +173,8 @@ def fedsrv_cli():
                     context.verbose_mode = max(1, context.verbose_mode)  # Use at least Verbose Mode 1
                     click.echo(f"{Style.BRIGHT}Reloading Knowledge Graph...{Style.RESET_ALL}")
                     jsonld_graph = load_knowledge_graph(kg_url=context.kg_url, verbose_mode=context.verbose_mode)
-                    context.kg_context = ""  # Reset to empty
                     context.jsonld_graph = jsonld_graph  # Update context with new JSON-LD graph
+                    context.kg_context = ""  # Reset to empty
                     click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded.{Style.RESET_ALL}")
                     context.verbose_mode = original_verbose_mode  # Restore original setting
                 elif command == "/mcp":
@@ -158,6 +186,12 @@ def fedsrv_cli():
                 elif command == "/exit":
                     if context.verbose_mode >= 1:
                         click.echo(f"{Style.BRIGHT}Exiting CLI...{Style.RESET_ALL}")
+                        click.echo(f"{Fore.YELLOW}Usage log written to {log_file_path}{Style.RESET_ALL}")
+                    # Clean up old log files
+                    log_files = [f for f in os.listdir("logs") if f.startswith("usage-") and f.endswith(".log")]
+                    log_files.sort(key=lambda x: int(x.split("-")[1].split(".")[0]), reverse=True)
+                    for old_file in log_files[context.log_history:]:
+                        os.remove(os.path.join("logs", old_file))
                     break
                 else:
                     click.echo(f"{Fore.RED}Invalid Command: {command}{Style.RESET_ALL}")

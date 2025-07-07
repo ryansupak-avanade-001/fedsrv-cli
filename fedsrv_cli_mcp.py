@@ -64,11 +64,11 @@ def run_mcp_mode(context, session):
         if prompt == "/help":
             click.echo(f"{Style.BRIGHT}MCP Mode Commands:{Style.RESET_ALL}")
             click.echo("- /help: Shows this MCP mode-specific help.")
-            click.echo("- /show-tokens: Displays the current token breakdown (system, history, KG context, total) and content (in verbose mode 2).")
+            click.echo("- /show-tokens: Displays the current token breakdown (system, history, KG context, total) and content (in verbose mode 2 or 3).")
             click.echo("- /reload-kg: Reloads the knowledge graph from the configured endpoint.")
             click.echo("- /back: Returns to the main CLI menu (or to MCP mode from test mode).")
             click.echo("- /exit: Exits the CLI entirely.")
-            click.echo("- /mode:verbose 0/1/2: Sets verbosity (0=standard, 1=verbose, 2=extreme, currently {}).".format(context.verbose_mode))
+            click.echo("- /mode:verbose 0/1/2/3: Sets verbosity (0=standard, 1=verbose, 2=extreme, 3=debug, currently {}).".format(context.verbose_mode))
             click.echo("- /mode:test: Enters a mode for sending requests to Grok-3 and MCP services.")
             click.echo("- Any other input: Sends the request to the MCP service (in test mode).")
         elif prompt == "/show-tokens":
@@ -91,6 +91,9 @@ def run_mcp_mode(context, session):
         elif prompt == "/mode:verbose 2":
             context.verbose_mode = 2
             click.echo(f"{Style.BRIGHT}Verbose mode: Extreme (2){Style.RESET_ALL}")
+        elif prompt == "/mode:verbose 3":
+            context.verbose_mode = 3
+            click.echo(f"{Style.BRIGHT}Verbose mode: Debug (3){Style.RESET_ALL}")
         elif prompt == "/mode:test" and not in_test_mode:
             in_test_mode = True
             if context.verbose_mode >= 1:

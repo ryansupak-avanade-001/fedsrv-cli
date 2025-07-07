@@ -1,3 +1,5 @@
+#fedsrv_cli_config.py
+#0bee5d0a-ef86-4368-afd6-02cac7d49116
 import os
 import json
 from dotenv import load_dotenv
@@ -42,4 +44,6 @@ def load_config():
         click.echo(f"{Fore.RED}No configuration found: .env with CONFIG_JSON or config.json required{Style.RESET_ALL}")
         raise click.Abort()
 
+    # Set default log-history if not specified
+    config.setdefault("cli", {}).setdefault("log-history", 10)
     return config
