@@ -62,11 +62,11 @@ class CliContext:
     verbose_mode: int
     token_limit: int
     fuzzy_threshold: float
-    max_history: int
+    max_history: int  # For conversation history
     grok_config: dict
     mcp_config: dict
     kg_url: str
-    log_history: int  # Added to store log-history setting
+    max_log_history: int  # For log file retention
     log_file_path: str  # Added to store log file path for MCP mode
 
 @click.command()
@@ -84,21 +84,23 @@ def fedsrv_cli():
 
     # CLI settings from config
     version = cli_config.get("version", "0.1")
-    max_history = cli_config.get("max-history", 10)
+    max_history = cli_config.get("max-history", 10)  # For conversation history
     token_limit = cli_config.get("max-tokens", 131072)
     fuzzy_threshold = config.get("knowledge-graph", {}).get("fuzzy-threshold", 70)
     verbose_mode = cli_config.get("verbose-mode", 0)  # Get verbose-mode from cli_config
-    log_history = cli_config.get("log-history", 10)  # Get log-history from cli_config
+    max_log_history = config.get("cli", {}).get("max-history", 10)  # Get max-history for log files
 
     # Log verbose mode at startup to confirm setting
     verbose_mode_names = {0: "Standard", 1: "Verbose", 2: "Extreme", 3: "Debug"}
     verbose_mode_name = verbose_mode_names.get(verbose_mode, "Unknown")
     click.echo(f"{Fore.YELLOW}/mode:verbose is set to {verbose_mode} ({verbose_mode_name}){Style.RESET_ALL}")
 
+    # Log max_log_history in Debug mode
+    if verbose_mode >= 3:
+        click.echo(f"{Fore.YELLOW}DEBUG: Max log history set to {max_log_history}{Style.RESET_ALL}")
+
     # Load Knowledge Graph from url
     jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
-    # Note: kg_labels extraction intentionally removed to simplify context management
-    # Previously used for fuzzy matching in MCP mode; ensure fedsrv_cli_mcp.py is updated if needed
     
     # Initialize memory and KG context
     memory = []  # List for [{"role": "user/assistant", "content": "text", "timestamp": "..."}]
@@ -119,8 +121,8 @@ def fedsrv_cli():
         grok_config=grok_config,
         mcp_config=mcp_config,
         kg_url=kg_url,
-        log_history=log_history,
-        log_file_path=log_file_path  # Added to provide log file path to MCP mode
+        max_log_history=max_log_history,
+        log_file_path=log_file_path
     )
 
     # Log tokens at startup (force token breakdown in Verbose Mode 1 or higher)
@@ -186,6 +188,19 @@ def fedsrv_cli():
                     context.verbose_mode = original_verbose_mode  # Restore original setting
                 elif command == "/mcp":
                     if run_mcp_mode(context, session, log_to_file):  # Pass log_to_file function
+                        # Clean up old log files after MCP mode exit
+                        log_files = [f for f in os.listdir("logs") if f.startswith("usage-") and f.endswith(".log")]
+                        log_files.sort(key=lambda x: int(x.split("-")[1].split(".")[0]), reverse=True)
+                        if context.verbose_mode >= 1 and log_files[context.max_log_history:]:
+                            click.echo(f"{Fore.YELLOW}Cleaning up log files exceeding max-history ({context.max_log_history})...{Style.RESET_ALL}")
+                        for old_file in log_files[context.max_log_history:]:
+                            try:
+                                os.remove(os.path.join("logs", old_file))
+                                if context.verbose_mode >= 1:
+                                    click.echo(f"{Fore.YELLOW}Deleted old log file: {old_file}{Style.RESET_ALL}")
+                            except OSError as e:
+                                if context.verbose_mode >= 1:
+                                    click.echo(f"{Fore.RED}Failed to delete log file {old_file}: {str(e)}{Style.RESET_ALL}")
                         break
                 elif command == "/back":
                     if context.verbose_mode >= 1:
@@ -197,8 +212,16 @@ def fedsrv_cli():
                     # Clean up old log files
                     log_files = [f for f in os.listdir("logs") if f.startswith("usage-") and f.endswith(".log")]
                     log_files.sort(key=lambda x: int(x.split("-")[1].split(".")[0]), reverse=True)
-                    for old_file in log_files[context.log_history:]:
-                        os.remove(os.path.join("logs", old_file))
+                    if context.verbose_mode >= 1 and log_files[context.max_log_history:]:
+                        click.echo(f"{Fore.YELLOW}Cleaning up log files exceeding max-history ({context.max_log_history})...{Style.RESET_ALL}")
+                    for old_file in log_files[context.max_log_history:]:
+                        try:
+                            os.remove(os.path.join("logs", old_file))
+                            if context.verbose_mode >= 1:
+                                click.echo(f"{Fore.YELLOW}Deleted old log file: {old_file}{Style.RESET_ALL}")
+                        except OSError as e:
+                            if context.verbose_mode >= 1:
+                                click.echo(f"{Fore.RED}Failed to delete log file {old_file}: {str(e)}{Style.RESET_ALL}")
                     break
                 else:
                     click.echo(f"{Fore.RED}Invalid Command: {command}{Style.RESET_ALL}")

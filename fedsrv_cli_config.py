@@ -44,8 +44,8 @@ def load_config():
         click.echo(f"{Fore.RED}No configuration found: .env with CONFIG_JSON or config.json required{Style.RESET_ALL}")
         raise click.Abort()
 
-    # Set default log-history if not specified
-    config.setdefault("cli", {}).setdefault("log-history", 10)
+    # Set default max-history for log files if not specified
+    config.setdefault("cli", {}).setdefault("max-history", 10)
     # Set default debug-json if not specified
     config.setdefault("knowledge-graph", {}).setdefault("debug-json", "")
     return config

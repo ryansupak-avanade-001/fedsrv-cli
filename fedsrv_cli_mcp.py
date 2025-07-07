@@ -9,6 +9,7 @@ from prompt_toolkit.styles import Style as PromptStyle
 import requests
 from datetime import datetime
 import colorama
+import os  # Added for log file deletion
 from colorama import Fore, Style
 from rapidfuzz import fuzz
 from fedsrv_cli_fuzzy_matcher import fuzzy_match_query, get_context_words
@@ -110,11 +111,37 @@ def run_mcp_mode(context, session, log_to_file):
                 if mcp_ok:
                     click.echo(f"{Style.BRIGHT}Connection to MCP AI Endpoint \"Little LLM\" closed.{Style.RESET_ALL}")
                 click.echo(f"{Fore.YELLOW}Usage log written to {context.log_file_path}{Style.RESET_ALL}")
+            # Clean up old log files
+            log_files = [f for f in os.listdir("logs") if f.startswith("usage-") and f.endswith(".log")]
+            log_files.sort(key=lambda x: int(x.split("-")[1].split(".")[0]), reverse=True)
+            if context.verbose_mode >= 1 and log_files[context.max_log_history:]:
+                click.echo(f"{Fore.YELLOW}Cleaning up log files exceeding max-history ({context.max_log_history})...{Style.RESET_ALL}")
+            for old_file in log_files[context.max_log_history:]:
+                try:
+                    os.remove(os.path.join("logs", old_file))
+                    if context.verbose_mode >= 1:
+                        click.echo(f"{Fore.YELLOW}Deleted old log file: {old_file}{Style.RESET_ALL}")
+                except OSError as e:
+                    if context.verbose_mode >= 1:
+                        click.echo(f"{Fore.RED}Failed to delete log file {old_file}: {str(e)}{Style.RESET_ALL}")
             break
         elif prompt == "/exit":
             if context.verbose_mode >= 1:
                 click.echo(f"{Style.BRIGHT}Exiting CLI...{Style.RESET_ALL}")
                 click.echo(f"{Fore.YELLOW}Usage log written to {context.log_file_path}{Style.RESET_ALL}")
+            # Clean up old log files
+            log_files = [f for f in os.listdir("logs") if f.startswith("usage-") and f.endswith(".log")]
+            log_files.sort(key=lambda x: int(x.split("-")[1].split(".")[0]), reverse=True)
+            if context.verbose_mode >= 1 and log_files[context.max_log_history:]:
+                click.echo(f"{Fore.YELLOW}Cleaning up log files exceeding max-history ({context.max_log_history})...{Style.RESET_ALL}")
+            for old_file in log_files[context.max_log_history:]:
+                try:
+                    os.remove(os.path.join("logs", old_file))
+                    if context.verbose_mode >= 1:
+                        click.echo(f"{Fore.YELLOW}Deleted old log file: {old_file}{Style.RESET_ALL}")
+                except OSError as e:
+                    if context.verbose_mode >= 1:
+                        click.echo(f"{Fore.RED}Failed to delete log file {old_file}: {str(e)}{Style.RESET_ALL}")
             return True  # Signal exit to main CLI
         elif in_test_mode:
             try:
