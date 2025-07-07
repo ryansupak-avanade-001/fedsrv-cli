@@ -67,6 +67,7 @@ class CliContext:
     mcp_config: dict
     kg_url: str
     log_history: int  # Added to store log-history setting
+    log_file_path: str  # Added to store log file path for MCP mode
 
 @click.command()
 def fedsrv_cli():
@@ -118,7 +119,8 @@ def fedsrv_cli():
         grok_config=grok_config,
         mcp_config=mcp_config,
         kg_url=kg_url,
-        log_history=log_history  # Added to store log-history
+        log_history=log_history,
+        log_file_path=log_file_path  # Added to provide log file path to MCP mode
     )
 
     # Log tokens at startup (force token breakdown in Verbose Mode 1 or higher)
@@ -183,7 +185,7 @@ def fedsrv_cli():
                     click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded.{Style.RESET_ALL}")
                     context.verbose_mode = original_verbose_mode  # Restore original setting
                 elif command == "/mcp":
-                    if run_mcp_mode(context, session):  # Returns True if /exit was called
+                    if run_mcp_mode(context, session, log_to_file):  # Pass log_to_file function
                         break
                 elif command == "/back":
                     if context.verbose_mode >= 1:

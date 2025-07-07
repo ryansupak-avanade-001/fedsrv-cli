@@ -2,14 +2,15 @@
 	"cli":
 	{
         "version": "0.1",
-    	"verbose-mode":2,
+    	"verbose-mode":1,
 		"log-history":10 
     },
 	"knowledge-graph":
 	{
 		"url": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx",
 		"fuzzy-threshold":70,
-		"max-history":10
+		"max-history":10,
+		"debug-json":"debug/debug.json"
 	},
     "mcp":
 	{

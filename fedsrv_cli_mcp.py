@@ -19,7 +19,7 @@ from fedsrv_cli_kg_parser import load_knowledge_graph
 
 colorama.init(autoreset=True)
 
-def run_mcp_mode(context, session):
+def run_mcp_mode(context, session, log_to_file):
     """Run the MCP mode interactive loop."""
     mcp_history = InMemoryHistory()
     mcp_session = PromptSession(history=mcp_history, style=PromptStyle.from_dict({'prompt': 'bold'}))
@@ -60,6 +60,7 @@ def run_mcp_mode(context, session):
         prompt = mcp_session.prompt([('class:prompt', f'fedsrv-cli{prompt_suffix} ')]).strip()
         if prompt:
             mcp_history.append_string(prompt)
+            log_to_file(f"INPUT: {prompt}")
         
         if prompt == "/help":
             click.echo(f"{Style.BRIGHT}MCP Mode Commands:{Style.RESET_ALL}")
@@ -108,10 +109,12 @@ def run_mcp_mode(context, session):
                 click.echo(f"{Style.BRIGHT}Connection to Grok AI Endpoint closed.{Style.RESET_ALL}")
                 if mcp_ok:
                     click.echo(f"{Style.BRIGHT}Connection to MCP AI Endpoint \"Little LLM\" closed.{Style.RESET_ALL}")
+                click.echo(f"{Fore.YELLOW}Usage log written to {context.log_file_path}{Style.RESET_ALL}")
             break
         elif prompt == "/exit":
             if context.verbose_mode >= 1:
                 click.echo(f"{Style.BRIGHT}Exiting CLI...{Style.RESET_ALL}")
+                click.echo(f"{Fore.YELLOW}Usage log written to {context.log_file_path}{Style.RESET_ALL}")
             return True  # Signal exit to main CLI
         elif in_test_mode:
             try:
@@ -140,6 +143,12 @@ def run_mcp_mode(context, session):
                     matches, fuzzy_scores = fuzzy_match_query(word, [item[0] for item in kg_items], verbose_mode=context.verbose_mode, fuzzy_threshold=context.fuzzy_threshold)
                     all_matches.extend([(kg_items[i][1], score, kg_items[i][2]) for i, (value, score) in enumerate(fuzzy_scores) if value == kg_items[i][0]])
 
+                # Log pre-deduplication matches in Debug mode
+                if context.verbose_mode >= 3:
+                    click.echo(f"{Fore.YELLOW}DEBUG: Fuzzy matches before deduplication: {len(all_matches)}{Style.RESET_ALL}")
+                    for item, score, idx in all_matches:
+                        click.echo(f"{Fore.YELLOW}DEBUG: Pre-deduplication match (index {idx}): {json.dumps(item, indent=2)} (Score: {score:.1f}){Style.RESET_ALL}")
+
                 # Deduplicate matches by exact JSON equality and index
                 match_dict = {}
                 for item, score, idx in all_matches:
@@ -147,6 +156,10 @@ def run_mcp_mode(context, session):
                     if item_json not in match_dict or score > match_dict[item_json][1]:
                         match_dict[item_json] = (item, score)
                 matched_elements = [item for item, _ in match_dict.values()]
+
+                # Log post-deduplication count in Debug mode
+                if context.verbose_mode >= 3:
+                    click.echo(f"{Fore.YELLOW}DEBUG: Fuzzy matches after deduplication: {len(matched_elements)}{Style.RESET_ALL}")
 
                 # Log matches in verbose mode
                 if context.verbose_mode >= 1:

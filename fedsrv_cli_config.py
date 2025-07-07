@@ -46,4 +46,6 @@ def load_config():
 
     # Set default log-history if not specified
     config.setdefault("cli", {}).setdefault("log-history", 10)
+    # Set default debug-json if not specified
+    config.setdefault("knowledge-graph", {}).setdefault("debug-json", "")
     return config

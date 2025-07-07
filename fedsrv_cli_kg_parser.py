@@ -1,5 +1,5 @@
 #fedsrv_cli_kg_parser.py
-#7b3b4e9f-2b7d-4f2a-9c5b-4e8b6b2c3f1a
+#945d6c22-57e7-48a7-b0ac-286baf89bcd3
 import requests
 import xml.etree.ElementTree as ET
 import xml.sax
@@ -19,9 +19,10 @@ def validate_xml(content):
         return False, str(e)
 
 def load_knowledge_graph(kg_url: str = None, verbose_mode: int = 0) -> dict:
-    """Load Knowledge Graph from a URL or file specified in kg_url."""
+    """Load Knowledge Graph from a URL or file specified in kg_url, or from debug-json if specified."""
     config = load_config()
     cli_config = config["mcp"].get("cli", {})  # Matches config.json: mcp.cli (optional)
+    debug_json_path = config.get("knowledge-graph", {}).get("debug-json", "")  # Get debug-json path
     xml_search_paths = cli_config.get("xml_search_paths", {})  # Expected but missing in provided config; preserved with default
     class_paths = xml_search_paths.get("class_paths", ["Declaration/Class"])  # Default preserved
     subclass_paths = xml_search_paths.get("subclass_paths", ["SubClassOf"])  # Default preserved
@@ -33,13 +34,37 @@ def load_knowledge_graph(kg_url: str = None, verbose_mode: int = 0) -> dict:
     object_min_cardinality_paths = xml_search_paths.get("object_min_cardinality_paths", ["SubClassOf"])  # Default preserved
     object_union_paths = xml_search_paths.get("object_union_paths", ["ObjectPropertyDomain/ObjectUnionOf"])  # Default preserved
 
+    jsonld_graph = {"@graph": []}
+    max_file_size = 50 * 1024 * 1024  # 50MB limit
+
+    # Check for debug-json file
+    if debug_json_path and verbose_mode >= 1:
+        click.echo(f"{Fore.YELLOW}Searching for debug JSON-LD file at: {debug_json_path}{Style.RESET_ALL}")
+    if debug_json_path and os.path.exists(debug_json_path):
+        try:
+            with open(debug_json_path, 'r', encoding='utf-8') as f:
+                json_data = json.load(f)
+                if verbose_mode >= 1:
+                    click.echo(f"{Fore.YELLOW}Loaded Knowledge Graph from debug JSON-LD file: {debug_json_path}{Style.RESET_ALL}")
+                # Save JSON-LD to logs/knowledge-graph.json
+                os.makedirs("logs", exist_ok=True)
+                with open("logs/knowledge-graph.json", "w", encoding="utf-8") as f:
+                    json.dump(json_data, f, indent=2)
+                if verbose_mode >= 1:
+                    click.echo(f"{Fore.YELLOW}Saved JSON-LD Knowledge Graph to logs/knowledge-graph.json{Style.RESET_ALL}")
+                return json_data
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            if verbose_mode >= 1:
+                click.echo(f"{Fore.YELLOW}Failed to load debug JSON-LD from {debug_json_path}: {str(e)}. Falling back to parsing from kg_url.{Style.RESET_ALL}")
+            # Fall back to parsing from kg_url
+    elif debug_json_path and verbose_mode >= 1:
+        click.echo(f"{Fore.YELLOW}Debug JSON-LD path {debug_json_path} does not exist. Falling back to parsing from kg_url.{Style.RESET_ALL}")
+
     if not kg_url:
         if verbose_mode >= 1:
             click.echo(f"{Fore.YELLOW}No KG URL found in configuration{Style.RESET_ALL}")
         return {"@graph": []}
 
-    jsonld_graph = {"@graph": []}
-    max_file_size = 50 * 1024 * 1024  # 50MB limit
     content_lines = None
     raw_content = None
 
