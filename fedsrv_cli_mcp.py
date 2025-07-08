@@ -195,14 +195,18 @@ def run_mcp_mode(context, session, log_to_file):
                 if context.verbose_mode >= 3:
                     click.echo(f"{Fore.YELLOW}DEBUG: Raw history matches: {json.dumps(history_matches, indent=2)}{Style.RESET_ALL}")
 
-                # Validate and filter history matches, limiting to conversation_history
+                # Validate and filter history matches, limiting to conversation_history conversations
                 valid_history_matches = []
+                conversation_count = 0
                 for i, item in enumerate(zip(history_matches, fuzzy_scores)):
-                    if len(valid_history_matches) >= context.conversation_history:
+                    if conversation_count >= context.conversation_history:  # Cap at conversation_history conversations
                         break
                     msg, score = item if isinstance(item, tuple) and len(item) == 2 else (None, None)
                     if isinstance(msg, dict) and "role" in msg and "content" in msg and isinstance(msg["content"], str):
                         valid_history_matches.append({"role": msg["role"], "content": msg["content"]})
+                        # Increment conversation count only for user messages to track conversations
+                        if msg["role"] == "user":
+                            conversation_count += 1
                     else:
                         if context.verbose_mode >= 3:
                             click.echo(f"{Fore.RED}DEBUG: Invalid history match skipped: {msg} (Index: {i}){Style.RESET_ALL}")
@@ -210,24 +214,27 @@ def run_mcp_mode(context, session, log_to_file):
                 # Select recent messages, excluding those already in valid_history_matches
                 recent_messages = []
                 history_content_set = {msg["content"] for msg in valid_history_matches}
-                remaining_slots = context.conversation_history - len(valid_history_matches)
-                if remaining_slots > 0:
+                remaining_conversations = context.conversation_history - conversation_count  # Cap at conversation_history conversations
+                if remaining_conversations > 0:
                     for msg in reversed(context.memory):
-                        if len(recent_messages) >= remaining_slots:
-                            break
                         if isinstance(msg, dict) and "role" in msg and "content" in msg and isinstance(msg["content"], str):
                             if msg["content"] not in history_content_set:
                                 recent_messages.append({"role": msg["role"], "content": msg["content"]})
                                 history_content_set.add(msg["content"])
+                                # Increment conversation count for user messages
+                                if msg["role"] == "user":
+                                    conversation_count += 1
+                                if conversation_count >= context.conversation_history:
+                                    break
 
-                # Ensure total history messages do not exceed conversation_history
+                # Combine history, ensuring total does not exceed 2 * conversation_history messages
                 total_history = valid_history_matches + recent_messages
-                if len(total_history) > context.conversation_history:
-                    total_history = total_history[:context.conversation_history]
+                if len(total_history) > 2 * context.conversation_history:
+                    total_history = total_history[:2 * context.conversation_history]
 
                 # Log memory summary in verbose mode
                 if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}Conversation Memory prompts included:{Style.RESET_ALL}")
+                    click.echo(f"{Fore.YELLOW}Conversation Memory prompts included (max {context.conversation_history} conversations, up to {2 * context.conversation_history} messages):{Style.RESET_ALL}")
                     if valid_history_matches:
                         click.echo(f"{Fore.YELLOW}  Fuzzy matched messages:{Style.RESET_ALL}")
                         for i, msg in enumerate(valid_history_matches):
@@ -237,11 +244,12 @@ def run_mcp_mode(context, session, log_to_file):
                             role = msg["role"].capitalize()
                             click.echo(f"{Fore.YELLOW}    {role}: {before} **{matched_word}** {after} (Index: {i}){Style.RESET_ALL}")
                     if recent_messages:
-                        click.echo(f"{Fore.YELLOW}  Recent messages (up to {remaining_slots}):{Style.RESET_ALL}")
+                        click.echo(f"{Fore.YELLOW}  Recent messages (up to {remaining_conversations} conversations):{Style.RESET_ALL}")
                         for msg in recent_messages:
                             first_words = " ".join(msg["content"].split()[:5])
                             role = msg["role"].capitalize()
                             click.echo(f"{Fore.YELLOW}    {role}: {first_words}...{Style.RESET_ALL}")
+                    click.echo(f"{Fore.YELLOW}  Total messages included: {len(total_history)}/{2 * context.conversation_history}{Style.RESET_ALL}")
 
                 # Construct messages
                 try:
@@ -279,7 +287,7 @@ def run_mcp_mode(context, session, log_to_file):
                     click.echo(f"{Fore.YELLOW}Prompt token count: {token_count}{Style.RESET_ALL}")
                 if token_count > context.token_limit:
                     # Truncate to system prompt, as many history messages as fit, and current prompt
-                    remaining_slots = context.conversation_history
+                    remaining_slots = 2 * context.conversation_history  # Allow up to 2 * conversation_history messages
                     if len(total_history) > remaining_slots:
                         total_history = total_history[:remaining_slots]
                     valid_messages = [valid_messages[0]] + total_history[:remaining_slots] + [valid_messages[-1]]
@@ -325,7 +333,7 @@ def run_mcp_mode(context, session, log_to_file):
                     # Store user prompt and response
                     context.memory.append({"role": "user", "content": prompt, "timestamp": datetime.now().isoformat()})
                     context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
-                    # Hard-coded to preserve last 100 conversations
+                    # Preserve last 100 messages
                     if len(context.memory) > 100:
                         context.memory = context.memory[-100:]
                     log_token_breakdown(context)
@@ -384,7 +392,7 @@ def run_mcp_mode(context, session, log_to_file):
 
                     # Store MCP response
                     context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
-                    # Hard-coded to preserve last 100 conversations
+                    # Preserve last 100 messages
                     if len(context.memory) > 100:
                         context.memory = context.memory[-100:]
                     log_token_breakdown(context)

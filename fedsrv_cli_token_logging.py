@@ -12,14 +12,15 @@ def log_token_breakdown(context: 'CliContext', user_prompt: Optional[str] = None
     if context.verbose_mode < 1:
         return
     system_tokens = estimate_tokens([{"role": "system", "content": context.combined_system_prompt}]) if context.combined_system_prompt else 0
-    history_tokens = estimate_tokens(context.memory)
+    # Use up to 2 * conversation_history messages to reflect full conversations (user + assistant pairs)
+    history_tokens = estimate_tokens(context.memory[-2 * context.conversation_history:]) if context.memory else 0
     kg_tokens = estimate_tokens([{"content": context.kg_context}]) if context.kg_context else 0
     user_tokens = estimate_tokens([{"role": "user", "content": user_prompt}]) if user_prompt else 0
     total_tokens = system_tokens + history_tokens + kg_tokens + user_tokens
     prefix = "Token breakdown" + (":" if user_prompt else "")
     click.echo(f"{Fore.YELLOW}{prefix}:{Style.RESET_ALL}")
     click.echo(f"{Fore.YELLOW}  System tokens: {system_tokens}{Style.RESET_ALL}")
-    click.echo(f"{Fore.YELLOW}  History tokens: {history_tokens}{Style.RESET_ALL}")
+    click.echo(f"{Fore.YELLOW}  History tokens: {history_tokens} (max {context.conversation_history} conversations, up to {2 * context.conversation_history} messages){Style.RESET_ALL}")
     click.echo(f"{Fore.YELLOW}  KG tokens: {kg_tokens}{Style.RESET_ALL}")
     if user_prompt:
         click.echo(f"{Fore.YELLOW}  Current Prompt tokens: {user_tokens}{Style.RESET_ALL}")
@@ -31,11 +32,12 @@ def log_token_content(context: 'CliContext', user_prompt: Optional[str] = None) 
         return
     system_prompt_content = context.combined_system_prompt if context.combined_system_prompt else "<No System tokens>"
     kg_context_content = context.kg_context if context.kg_context else "<No KG tokens>"
-    memory_content = context.memory if context.memory else ["<No History tokens>"]
+    # Use up to 2 * conversation_history messages to reflect full conversations
+    memory_content = context.memory[-2 * context.conversation_history:] if context.memory else ["<No History tokens>"]
     prefix = "Exact token content" + (":" if user_prompt else "")
     click.echo(f"{Fore.YELLOW}{prefix}:{Style.RESET_ALL}")
     click.echo(f"{Fore.YELLOW}  System tokens: {system_prompt_content}{Style.RESET_ALL}")
-    click.echo(f"{Fore.YELLOW}  History tokens: {Style.RESET_ALL}")
+    click.echo(f"{Fore.YELLOW}  History tokens (max {context.conversation_history} conversations):{Style.RESET_ALL}")
     if memory_content == ["<No History tokens>"]:
         click.echo(f"{Fore.YELLOW}    <No History tokens>{Style.RESET_ALL}")
     else:
