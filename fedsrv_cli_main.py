@@ -1,3 +1,5 @@
+#fedsrv_cli_main.py
+#fuzzy_matcher_artifact
 import click
 import json
 import os
@@ -66,6 +68,8 @@ class CliContext:
     kg_url: str
     max_log_history: int
     log_file_path: str
+    match_history: int  # Stores KG match-history for TTL
+    context_matches_with_ttl: dict  # Added to store matches with TTL for all data sources
 
 @click.command()
 def fedsrv_cli():
@@ -87,15 +91,17 @@ def fedsrv_cli():
     fuzzy_threshold = config.get("knowledge-graph", {}).get("fuzzy-threshold", 70)
     verbose_mode = cli_config.get("verbose-mode", 0)
     max_log_history = cli_config.get("max-history", 10)
+    match_history = config.get("knowledge-graph", {}).get("match-history", 10)
 
     # Log verbose mode at startup
     verbose_mode_names = {0: "Standard", 1: "Verbose", 2: "Extreme", 3: "Debug"}
     verbose_mode_name = verbose_mode_names.get(verbose_mode, "Unknown")
     click.echo(f"{Fore.YELLOW}/mode:verbose is set to {verbose_mode} ({verbose_mode_name}){Style.RESET_ALL}")
 
-    # Log max_log_history in Debug mode
+    # Log max_log_history and match_history in Debug mode
     if verbose_mode >= 3:
         click.echo(f"{Fore.YELLOW}DEBUG: Max log history set to {max_log_history}{Style.RESET_ALL}")
+        click.echo(f"{Fore.YELLOW}DEBUG: KG match history set to {match_history}{Style.RESET_ALL}")
 
     # Load Knowledge Graph
     jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=verbose_mode)
@@ -121,7 +127,9 @@ def fedsrv_cli():
         mcp_config=mcp_config,
         kg_url=kg_url,
         max_log_history=max_log_history,
-        log_file_path=log_file_path
+        log_file_path=log_file_path,
+        match_history=match_history,
+        context_matches_with_ttl={"kg": [], "schema": [], "mcp_endpoint": []}  # Initialize matches with TTL for all sources
     )
 
     # Log tokens at startup
@@ -190,11 +198,12 @@ def fedsrv_cli():
                     original_verbose = context.verbose_mode
                     context.verbose_mode = max(1, context.verbose_mode)
                     context.jsonld_graph = load_knowledge_graph(kg_url=kg_url, verbose_mode=context.verbose_mode)
+                    context.context_matches_with_ttl["kg"] = []  # Reset KG matches on reload
                     context.verbose_mode = original_verbose
                     click.echo(f"{Fore.GREEN}Knowledge graph reloaded.{Style.RESET_ALL}")
                 elif command == "/exit":
                     if context.verbose_mode >= 1:
-                        click.echo(f"{Style.BRIGHT}Exiting CLI...{Style.RESET_ALL}")
+                        click.echo(f"{Style.BRIGHT}Exiting CLI...{Style.BRIGHT}")
                         click.echo(f"{Fore.YELLOW}Usage log written to {log_file_path}{Style.RESET_ALL}")
                     log_files = [f for f in os.listdir("logs") if f.startswith("usage-") and f.endswith(".log")]
                     log_files.sort(key=lambda x: int(x.split("-")[1].split(".")[0]), reverse=True)

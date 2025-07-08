@@ -37,6 +37,13 @@ def run_mcp_mode(context, session, log_to_file):
         ]
     }
     
+    # Initialize matches with TTL for all data sources
+    context.context_matches_with_ttl = {
+        "kg": [],
+        "schema": [],
+        "mcp_endpoint": []
+    }  # Dictionary mapping source types to lists of (item, score, ttl) tuples
+
     # Connection tests and notifications
     max_retries = 3
     grok_ok = False
@@ -101,6 +108,7 @@ def run_mcp_mode(context, session, log_to_file):
             jsonld_graph = load_knowledge_graph(kg_url=context.kg_url, verbose_mode=context.verbose_mode)
             context.jsonld_graph = jsonld_graph  # Update context with new JSON-LD graph
             context.kg_context = ""  # Reset to empty
+            context.context_matches_with_ttl["kg"] = []  # Reset KG matches on reload
             if context.verbose_mode >= 1:
                 click.echo(f"{Style.BRIGHT}Knowledge Graph reloaded.{Style.RESET_ALL}")
         elif prompt == "/mode:verbose 0":
@@ -118,7 +126,7 @@ def run_mcp_mode(context, session, log_to_file):
         elif prompt == "/mode:test" and not in_test_mode:
             in_test_mode = True
             if context.verbose_mode >= 1:
-                click.echo(f"{Style.BRIGHT}Now entering Test Mode. Requests will be sent to Grok-3 and MCP services.{Style.RESET_ALL}")
+                click.echo(f"{Style.BRIGHT}Now entering Test Mode. Requests will be sent to Grok-3 and MCP services.{Style.BRIGHT}")
                 click.echo(f"{Style.BRIGHT}Type /back to return to MCP mode, or /exit to quit CLI.{Style.RESET_ALL}")
         elif prompt == "/back" and in_test_mode:
             in_test_mode = False
@@ -164,13 +172,23 @@ def run_mcp_mode(context, session, log_to_file):
             return True  # Signal exit to main CLI
         elif in_test_mode:
             try:
-                # Process data sources (KG currently, extensible for others)
-                contexts = process_data_sources(context, prompt)
-                context.kg_context = contexts["kg"]  # Update context with KG context
+                # Process data sources and update matches with TTL
+                result = process_data_sources(context, prompt)
+                contexts = result["contexts"]
+                matches_with_ttl = result["matches_with_ttl"]
+
+                # Update context with new contexts
+                context.kg_context = contexts["kg"]
                 if not isinstance(context.kg_context, str):
                     if context.verbose_mode >= 1:
                         click.echo(f"{Fore.RED}Invalid KG context type: {type(context.kg_context)}{Style.RESET_ALL}")
                     context.kg_context = ""
+
+                # Update context_matches_with_ttl with new matches
+                context.context_matches_with_ttl.update(matches_with_ttl)
+                if context.verbose_mode >= 2:
+                    for source, matches in context.context_matches_with_ttl.items():
+                        click.echo(f"{Fore.YELLOW}{source.capitalize()} context set to {len([m for m in matches if m[2] > 0])} active matches{Style.RESET_ALL}")
 
                 # Fuzzy match prior messages
                 history_matches = []
@@ -397,6 +415,21 @@ def run_mcp_mode(context, session, log_to_file):
                         context.memory = context.memory[-100:]
                     log_token_breakdown(context)
                     log_token_content(context)
+
+                # Update TTLs for all data source matches after request/response cycle
+                for source, matches in context.context_matches_with_ttl.items():
+                    expired_matches = []
+                    for match in matches:
+                        match[2] -= 1  # Decrement TTL
+                        if match[2] <= 0:
+                            expired_matches.append(match)
+                    for expired in expired_matches:
+                        matches.remove(expired)
+                        if context.verbose_mode >= 2:
+                            click.echo(f"{Fore.YELLOW}Removed expired {source} match (TTL 0): {json.dumps(expired[0], sort_keys=True)[:50]}...{Style.RESET_ALL}")
+                    if context.verbose_mode >= 2:
+                        ttl_range = f"{min([m[2] for m in matches], default=0)}-{max([m[2] for m in matches], default=0)}" if matches else "0-0"
+                        click.echo(f"{Fore.YELLOW}{source.capitalize()} matches after TTL update: {len(matches)} (TTL range: {ttl_range}){Style.RESET_ALL}")
 
             except Exception as e:
                 if context.verbose_mode >= 2:

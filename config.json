@@ -9,7 +9,8 @@
 	{
 		"url": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx",
 		"fuzzy-threshold":70,
-		"debug-json":"debug/debug.json"
+		"debug-json":"debug/debug.json",
+		"match-history":10
 	},
     "mcp":
 	{
