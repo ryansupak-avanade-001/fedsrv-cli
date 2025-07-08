@@ -13,7 +13,7 @@ def log_token_breakdown(context: 'CliContext', user_prompt: Optional[str] = None
         return
     system_tokens = estimate_tokens([{"role": "system", "content": context.combined_system_prompt}]) if context.combined_system_prompt else 0
     history_tokens = estimate_tokens(context.memory)
-    kg_tokens = estimate_tokens([{"content": json.dumps(context.jsonld_graph)}]) if context.jsonld_graph.get('@graph') else 0
+    kg_tokens = estimate_tokens([{"content": context.kg_context}]) if context.kg_context else 0
     user_tokens = estimate_tokens([{"role": "user", "content": user_prompt}]) if user_prompt else 0
     total_tokens = system_tokens + history_tokens + kg_tokens + user_tokens
     prefix = "Token breakdown" + (":" if user_prompt else "")
@@ -30,7 +30,7 @@ def log_token_content(context: 'CliContext', user_prompt: Optional[str] = None) 
     if context.verbose_mode < 2:
         return
     system_prompt_content = context.combined_system_prompt if context.combined_system_prompt else "<No System tokens>"
-    kg_context_content = json.dumps(context.jsonld_graph, indent=2) if context.jsonld_graph.get('@graph') else "<No KG tokens>"
+    kg_context_content = context.kg_context if context.kg_context else "<No KG tokens>"
     memory_content = context.memory if context.memory else ["<No History tokens>"]
     prefix = "Exact token content" + (":" if user_prompt else "")
     click.echo(f"{Fore.YELLOW}{prefix}:{Style.RESET_ALL}")
