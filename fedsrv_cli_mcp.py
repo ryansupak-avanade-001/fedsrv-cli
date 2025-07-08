@@ -251,8 +251,8 @@ def run_mcp_mode(context, session, log_to_file):
                         click.echo(f"{Fore.YELLOW}  {json.dumps(item, indent=2)} (Score: {score:.1f}){Style.RESET_ALL}")
 
                 # Ensure context.memory is trimmed before constructing messages
-                if len(context.memory) > context.max_history:
-                    context.memory = context.memory[-context.max_history:]
+                if len(context.memory) > context.conversation_history:
+                    context.memory = context.memory[-context.conversation_history:]
 
                 # Log context.memory for debugging
                 if context.verbose_mode >= 3:
@@ -398,8 +398,8 @@ def run_mcp_mode(context, session, log_to_file):
                     # Store user prompt and response
                     context.memory.append({"role": "user", "content": prompt, "timestamp": datetime.now().isoformat()})
                     context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
-                    if len(context.memory) > context.max_history:
-                        context.memory = context.memory[-context.max_history:]
+                    if len(context.memory) > context.conversation_history:
+                        context.memory = context.memory[-context.conversation_history:]
                     log_token_breakdown(context)
                     log_token_content(context)
 
@@ -456,8 +456,8 @@ def run_mcp_mode(context, session, log_to_file):
 
                     # Store MCP response
                     context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
-                    if len(context.memory) > context.max_history:
-                        context.memory = context.memory[-context.max_history:]
+                    if len(context.memory) > context.conversation_history:
+                        context.memory = context.memory[-context.conversation_history:]
                     log_token_breakdown(context)
                     log_token_content(context)
 

@@ -3,13 +3,12 @@
 	{
         "version": "0.1",
     	"verbose-mode":3,
-		"log-history":10 
+		"log-history":10
     },
 	"knowledge-graph":
 	{
 		"url": "https://energyai-team-avanade.azurewebsites.net/data/FedServiceDemo-v001.owx",
 		"fuzzy-threshold":70,
-		"max-history":10,
 		"debug-json":"debug/debug.json"
 	},
     "mcp":
@@ -23,6 +22,7 @@
             "api_key": "",
             "endpoint": "https://api.x.ai/v1/chat/completions",
             "model": "grok-3",
+			"conversation-history":10,
             "max-tokens": 131072,
 			"system-prompts":
 			[
