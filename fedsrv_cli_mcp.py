@@ -2,21 +2,20 @@
 #818b2c14-fb15-4899-bd5d-e622bbc391dd
 import click
 import json
-import re  # Added for query word splitting
+import os
 from prompt_toolkit import PromptSession
 from prompt_toolkit.history import InMemoryHistory
 from prompt_toolkit.styles import Style as PromptStyle
 import requests
 from datetime import datetime
 import colorama
-import os  # Added for log file deletion
 from colorama import Fore, Style
-from rapidfuzz import fuzz
 from fedsrv_cli_fuzzy_matcher import fuzzy_match_query, get_context_words
 from fedsrv_cli_api_client import test_connection
 from fedsrv_cli_utils import estimate_tokens
 from fedsrv_cli_token_logging import log_token_breakdown, log_token_content
 from fedsrv_cli_kg_parser import load_knowledge_graph
+from fedsrv_cli_data_source_processor import process_data_sources
 
 colorama.init(autoreset=True)
 
@@ -165,98 +164,13 @@ def run_mcp_mode(context, session, log_to_file):
             return True  # Signal exit to main CLI
         elif in_test_mode:
             try:
-                # Extract attribute values from jsonld_graph except @type, storing matched sub-element
-                kg_items = []
-                for idx, item in enumerate(context.jsonld_graph.get('@graph', [])):
-                    for key, value in item.items():
-                        if key != '@type':
-                            if isinstance(value, str):
-                                kg_items.append((value, item, idx))  # Store full JSON-LD item
-                            elif isinstance(value, dict) and '@id' in value:
-                                kg_items.append((value['@id'], item, idx))  # Store full JSON-LD item
-                            elif isinstance(value, list):
-                                for subitem in value:
-                                    if isinstance(subitem, dict) and '@id' in subitem:
-                                        kg_items.append((subitem['@id'], item, idx))  # Store full JSON-LD item
-
-                # Split prompt into words, stripping non-alphanumeric characters
-                words = [re.sub(r'[^a-zA-Z0-9]', '', word.lower()) for word in prompt.split() if re.sub(r'[^a-zA-Z0-9]', '', word)]
-                # Deduplicate words to avoid redundant matches
-                words = list(dict.fromkeys(words))
-                if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}Query words for fuzzy search: {words}{Style.RESET_ALL}")
-
-                # Fuzzy match each word individually
-                all_matches = []
-                try:
-                    for word in words:
-                        matches, fuzzy_scores = fuzzy_match_query(word, [item[0] for item in kg_items], verbose_mode=context.verbose_mode, fuzzy_threshold=context.fuzzy_threshold)
-                        if not isinstance(fuzzy_scores, list):
-                            if context.verbose_mode >= 2:
-                                click.echo(f"{Fore.RED}DEBUG: Invalid fuzzy_scores type: {type(fuzzy_scores)}{Style.RESET_ALL}")
-                            continue
-                        for i, score_item in enumerate(fuzzy_scores):
-                            if not isinstance(score_item, tuple) or len(score_item) != 2:
-                                if context.verbose_mode >= 2:
-                                    click.echo(f"{Fore.RED}DEBUG: Invalid fuzzy_scores item at index {i}: {score_item}{Style.RESET_ALL}")
-                                continue
-                            value, score = score_item
-                            for j, item in enumerate(kg_items):
-                                if item[0] == value and j not in [m[2] for m in all_matches]:
-                                    all_matches.append((item[1], score, j))
-                                    break
-                except Exception as e:
-                    if context.verbose_mode >= 2:
-                        click.echo(f"{Fore.RED}DEBUG: Error in fuzzy matching: {str(e)}{Style.RESET_ALL}")
-                    all_matches = []
-
-                # Log pre-deduplication matches in Debug mode
-                if context.verbose_mode >= 3:
-                    click.echo(f"{Fore.YELLOW}DEBUG: Fuzzy matches before deduplication: {len(all_matches)}{Style.RESET_ALL}")
-                    for item, score, idx in all_matches:
-                        click.echo(f"{Fore.YELLOW}DEBUG: Pre-deduplication match (index {idx}): {json.dumps(item, indent=2)} (Score: {score:.1f}){Style.RESET_ALL}")
-
-                # Deduplicate matches by exact JSON equality
-                match_dict = {}
-                for item, score, idx in all_matches:
-                    item_json = json.dumps(item, sort_keys=True)  # Deduplicate by full JSON-LD element
-                    if item_json not in match_dict or score > match_dict[item_json][1]:
-                        match_dict[item_json] = (item, score)
-                matched_elements = [item for item, _ in match_dict.values()]
-
-                # Log post-deduplication count in Debug mode
-                if context.verbose_mode >= 3:
-                    click.echo(f"{Fore.YELLOW}DEBUG: Fuzzy matches after deduplication: {len(matched_elements)}{Style.RESET_ALL}")
-
-                # Set kg_context to matched elements as JSON
-                try:
-                    context.kg_context = json.dumps(matched_elements) if matched_elements else ""
-                except Exception as e:
-                    if context.verbose_mode >= 2:
-                        click.echo(f"{Fore.RED}DEBUG: Error serializing kg_context: {str(e)}{Style.RESET_ALL}")
-                    context.kg_context = ""
-                if context.verbose_mode >= 3:
-                    click.echo(f"{Fore.YELLOW}DEBUG: KG context set to: {context.kg_context}{Style.RESET_ALL}")
+                # Process data sources (KG currently, extensible for others)
+                contexts = process_data_sources(context, prompt)
+                context.kg_context = contexts["kg"]  # Update context with KG context
                 if not isinstance(context.kg_context, str):
                     if context.verbose_mode >= 1:
                         click.echo(f"{Fore.RED}Invalid KG context type: {type(context.kg_context)}{Style.RESET_ALL}")
                     context.kg_context = ""
-
-                # Log matches in verbose mode
-                if context.verbose_mode >= 1:
-                    click.echo(f"{Fore.YELLOW}Total fuzzy matches: {len(matched_elements)}{Style.RESET_ALL}")
-                if context.verbose_mode >= 2:
-                    click.echo(f"{Fore.YELLOW}Fuzzy matched KG elements: {len(matched_elements)}{Style.RESET_ALL}")
-                    for item, score in match_dict.values():
-                        click.echo(f"{Fore.YELLOW}  {json.dumps(item, indent=2)} (Score: {score:.1f}){Style.RESET_ALL}")
-
-                # Ensure context.memory is trimmed before constructing messages
-                if len(context.memory) > context.conversation_history:
-                    context.memory = context.memory[-context.conversation_history:]
-
-                # Log context.memory for debugging
-                if context.verbose_mode >= 3:
-                    click.echo(f"{Fore.YELLOW}DEBUG: Context memory: {json.dumps(context.memory, indent=2)}{Style.RESET_ALL}")
 
                 # Fuzzy match prior messages
                 history_matches = []
@@ -281,9 +195,11 @@ def run_mcp_mode(context, session, log_to_file):
                 if context.verbose_mode >= 3:
                     click.echo(f"{Fore.YELLOW}DEBUG: Raw history matches: {json.dumps(history_matches, indent=2)}{Style.RESET_ALL}")
 
-                # Validate and filter history matches
+                # Validate and filter history matches, limiting to conversation_history
                 valid_history_matches = []
                 for i, item in enumerate(zip(history_matches, fuzzy_scores)):
+                    if len(valid_history_matches) >= context.conversation_history:
+                        break
                     msg, score = item if isinstance(item, tuple) and len(item) == 2 else (None, None)
                     if isinstance(msg, dict) and "role" in msg and "content" in msg and isinstance(msg["content"], str):
                         valid_history_matches.append({"role": msg["role"], "content": msg["content"]})
@@ -291,26 +207,27 @@ def run_mcp_mode(context, session, log_to_file):
                         if context.verbose_mode >= 3:
                             click.echo(f"{Fore.RED}DEBUG: Invalid history match skipped: {msg} (Index: {i}){Style.RESET_ALL}")
 
-                # Get last 3 messages (user/assistant pairs)
-                last_three = context.memory[-3:] if len(context.memory) >= 3 else context.memory
-                # Validate last_three messages and strip extra fields
-                valid_last_three = []
-                for msg in last_three:
-                    if isinstance(msg, dict) and "role" in msg and "content" in msg and isinstance(msg["content"], str):
-                        valid_last_three.append({"role": msg["role"], "content": msg["content"]})
-                    else:
-                        if context.verbose_mode >= 3:
-                            click.echo(f"{Fore.RED}DEBUG: Invalid last_three message skipped: {msg}{Style.RESET_ALL}")
+                # Select recent messages, excluding those already in valid_history_matches
+                recent_messages = []
+                history_content_set = {msg["content"] for msg in valid_history_matches}
+                remaining_slots = context.conversation_history - len(valid_history_matches)
+                if remaining_slots > 0:
+                    for msg in reversed(context.memory):
+                        if len(recent_messages) >= remaining_slots:
+                            break
+                        if isinstance(msg, dict) and "role" in msg and "content" in msg and isinstance(msg["content"], str):
+                            if msg["content"] not in history_content_set:
+                                recent_messages.append({"role": msg["role"], "content": msg["content"]})
+                                history_content_set.add(msg["content"])
+
+                # Ensure total history messages do not exceed conversation_history
+                total_history = valid_history_matches + recent_messages
+                if len(total_history) > context.conversation_history:
+                    total_history = total_history[:context.conversation_history]
 
                 # Log memory summary in verbose mode
                 if context.verbose_mode >= 2:
                     click.echo(f"{Fore.YELLOW}Conversation Memory prompts included:{Style.RESET_ALL}")
-                    if valid_last_three:
-                        click.echo(f"{Fore.YELLOW}  Recent messages (last 3):{Style.RESET_ALL}")
-                        for msg in valid_last_three:
-                            first_words = " ".join(msg["content"].split()[:5])
-                            role = msg["role"].capitalize()
-                            click.echo(f"{Fore.YELLOW}    {role}: {first_words}...{Style.RESET_ALL}")
                     if valid_history_matches:
                         click.echo(f"{Fore.YELLOW}  Fuzzy matched messages:{Style.RESET_ALL}")
                         for i, msg in enumerate(valid_history_matches):
@@ -319,12 +236,18 @@ def run_mcp_mode(context, session, log_to_file):
                             before, after = get_context_words(content, matched_word)
                             role = msg["role"].capitalize()
                             click.echo(f"{Fore.YELLOW}    {role}: {before} **{matched_word}** {after} (Index: {i}){Style.RESET_ALL}")
+                    if recent_messages:
+                        click.echo(f"{Fore.YELLOW}  Recent messages (up to {remaining_slots}):{Style.RESET_ALL}")
+                        for msg in recent_messages:
+                            first_words = " ".join(msg["content"].split()[:5])
+                            role = msg["role"].capitalize()
+                            click.echo(f"{Fore.YELLOW}    {role}: {first_words}...{Style.RESET_ALL}")
 
                 # Construct messages
                 try:
                     messages = [
                         {"role": "system", "content": f"{context.combined_system_prompt}\nKG context: {context.kg_context}" if context.kg_context else context.combined_system_prompt},
-                    ] + valid_last_three + valid_history_matches + [
+                    ] + total_history + [
                         {"role": "user", "content": prompt}
                     ]
                     if context.verbose_mode >= 3:
@@ -355,7 +278,11 @@ def run_mcp_mode(context, session, log_to_file):
                 if context.verbose_mode >= 2:
                     click.echo(f"{Fore.YELLOW}Prompt token count: {token_count}{Style.RESET_ALL}")
                 if token_count > context.token_limit:
-                    valid_messages = valid_messages[:1] + valid_messages[-4:]  # Keep system, last 3, current query
+                    # Truncate to system prompt, as many history messages as fit, and current prompt
+                    remaining_slots = context.conversation_history
+                    if len(total_history) > remaining_slots:
+                        total_history = total_history[:remaining_slots]
+                    valid_messages = [valid_messages[0]] + total_history[:remaining_slots] + [valid_messages[-1]]
                     if context.verbose_mode >= 2:
                         click.echo(f"{Fore.YELLOW}Truncated prompt to {estimate_tokens(valid_messages)} tokens{Style.RESET_ALL}")
 
@@ -398,8 +325,9 @@ def run_mcp_mode(context, session, log_to_file):
                     # Store user prompt and response
                     context.memory.append({"role": "user", "content": prompt, "timestamp": datetime.now().isoformat()})
                     context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
-                    if len(context.memory) > context.conversation_history:
-                        context.memory = context.memory[-context.conversation_history:]
+                    # Hard-coded to preserve last 100 conversations
+                    if len(context.memory) > 100:
+                        context.memory = context.memory[-100:]
                     log_token_breakdown(context)
                     log_token_content(context)
 
@@ -456,8 +384,9 @@ def run_mcp_mode(context, session, log_to_file):
 
                     # Store MCP response
                     context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
-                    if len(context.memory) > context.conversation_history:
-                        context.memory = context.memory[-context.conversation_history:]
+                    # Hard-coded to preserve last 100 conversations
+                    if len(context.memory) > 100:
+                        context.memory = context.memory[-100:]
                     log_token_breakdown(context)
                     log_token_content(context)
 
