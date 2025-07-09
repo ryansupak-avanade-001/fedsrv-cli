@@ -221,13 +221,16 @@ def run_mcp_mode(context, session, log_to_file):
                         break
                     msg, score = item if isinstance(item, tuple) and len(item) == 2 else (None, None)
                     if isinstance(msg, dict) and "role" in msg and "content" in msg and isinstance(msg["content"], str):
-                        valid_history_matches.append({"role": msg["role"], "content": msg["content"]})
+                        valid_history_matches.append({"role": msg["role"], "content": msg["content"], "score": score})  # Store score for fuzzy matches
                         # Increment conversation count only for user messages to track conversations
                         if msg["role"] == "user":
                             conversation_count += 1
                     else:
                         if context.verbose_mode >= 3:
                             click.echo(f"{Fore.RED}DEBUG: Invalid history match skipped: {msg} (Index: {i}){Style.RESET_ALL}")
+
+                # Strip scores for payload to maintain original message structure
+                valid_history_matches = [{"role": msg["role"], "content": msg["content"]} for msg in valid_history_matches]
 
                 # Select recent messages, excluding those already in valid_history_matches
                 recent_messages = []
@@ -237,6 +240,8 @@ def run_mcp_mode(context, session, log_to_file):
                     for msg in reversed(context.memory):
                         if isinstance(msg, dict) and "role" in msg and "content" in msg and isinstance(msg["content"], str):
                             if msg["content"] not in history_content_set:
+                                if "score" not in msg:  # Ensure score field for existing messages
+                                    msg["score"] = 0.0
                                 recent_messages.append({"role": msg["role"], "content": msg["content"]})
                                 history_content_set.add(msg["content"])
                                 # Increment conversation count for user messages
@@ -348,9 +353,9 @@ def run_mcp_mode(context, session, log_to_file):
                         click.echo(f"{Fore.YELLOW}DEBUG: Grok-3 response content: {content}{Style.RESET_ALL}")
                     click.echo(f"{Style.BRIGHT}> (Grok Response:) {content}{Style.RESET_ALL}")
 
-                    # Store user prompt and response
-                    context.memory.append({"role": "user", "content": prompt, "timestamp": datetime.now().isoformat()})
-                    context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
+                    # Store user prompt and response with default score
+                    context.memory.append({"role": "user", "content": prompt, "timestamp": datetime.now().isoformat(), "score": 0.0})
+                    context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat(), "score": 0.0})
                     # Preserve last 100 messages
                     if len(context.memory) > 100:
                         context.memory = context.memory[-100:]
@@ -408,8 +413,8 @@ def run_mcp_mode(context, session, log_to_file):
                             click.echo(f"{Fore.YELLOW}MCP response: {content}{Style.RESET_ALL}")
                         click.echo(f"{Style.BRIGHT}> (MCP Response:) {content}{Style.RESET_ALL}")
 
-                    # Store MCP response
-                    context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat()})
+                    # Store MCP response with default score
+                    context.memory.append({"role": "assistant", "content": content, "timestamp": datetime.now().isoformat(), "score": 0.0})
                     # Preserve last 100 messages
                     if len(context.memory) > 100:
                         context.memory = context.memory[-100:]

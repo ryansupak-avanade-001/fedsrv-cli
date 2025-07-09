@@ -6,6 +6,16 @@ import click
 from colorama import Fore, Style
 from fedsrv_cli_fuzzy_matcher import fuzzy_match_query
 
+# Define type priority for sorting KG matches
+TYPE_PRIORITY = {
+    "AnnotationAssertion": 1,
+    "Annotation": 2,
+    "ObjectProperty": 3,
+    "ObjectUnionOf": 6,
+    "Class": 7,
+    "DataMinCardinality": 9
+}
+
 # Knowledge Graph Processing
 def extract_kg_items(jsonld_graph):
     """Extract values and items from jsonld_graph for fuzzy matching."""
@@ -85,6 +95,7 @@ def process_kg_source(query, jsonld_graph, verbose_mode, fuzzy_threshold, match_
         score = next((s for i, s, idx in all_matches if json.dumps(i, sort_keys=True) == item_json), 70.0)  # Default score if not found
         if existing_match:
             existing_match[2] = match_history  # Reset TTL
+            existing_match[1] = score  # Update score
             if verbose_mode >= 2:
                 click.echo(f"{Fore.YELLOW}Reset TTL to {match_history} for existing KG match: {item_json[:50]}...{Style.RESET_ALL}")
         else:
@@ -92,6 +103,15 @@ def process_kg_source(query, jsonld_graph, verbose_mode, fuzzy_threshold, match_
             new_matches_added.append(item_json)
             if verbose_mode >= 2:
                 click.echo(f"{Fore.YELLOW}Added new KG match with TTL {match_history}: {item_json[:50]}...{Style.RESET_ALL}")
+
+    # Sort matches by type priority and descending fuzzy score
+    matches_with_ttl.sort(key=lambda x: (
+        TYPE_PRIORITY.get(
+            x[0].get("@type", "SubClassOf" if "rdfs:subClassOf" in x[0] else "SubObjectPropertyOf" if "rdfs:subPropertyOf" in x[0] else "ObjectProperty" if "rdfs:domain" in x[0] else "Class"),
+            7
+        ),
+        -x[1]  # Negative score for descending order
+    ))
 
     # Log post-deduplication count in Debug mode
     if verbose_mode >= 3:
