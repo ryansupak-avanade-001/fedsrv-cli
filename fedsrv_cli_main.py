@@ -70,6 +70,7 @@ class CliContext:
     log_file_path: str
     match_history: int  # Stores KG match-history for TTL
     context_matches_with_ttl: dict  # Added to store matches with TTL for all data sources
+    match_maximum: int
 
 @click.command()
 def fedsrv_cli():
@@ -92,6 +93,7 @@ def fedsrv_cli():
     verbose_mode = cli_config.get("verbose-mode", 0)
     max_log_history = cli_config.get("max-history", 10)
     match_history = config.get("knowledge-graph", {}).get("match-history", 10)
+    match_maximum = config.get("knowledge-graph", {}).get("match-maximum", 20)
 
     # Log verbose mode at startup
     verbose_mode_names = {0: "Standard", 1: "Verbose", 2: "Extreme", 3: "Debug"}
@@ -129,7 +131,8 @@ def fedsrv_cli():
         max_log_history=max_log_history,
         log_file_path=log_file_path,
         match_history=match_history,
-        context_matches_with_ttl={"kg": [], "schema": [], "mcp_endpoint": []}  # Initialize matches with TTL for all sources
+        context_matches_with_ttl={"kg": [], "schema": [], "mcp_endpoint": []},  # Initialize matches with TTL for all sources
+        match_maximum=match_maximum
     )
 
     # Log tokens at startup

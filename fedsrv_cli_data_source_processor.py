@@ -42,7 +42,7 @@ def deduplicate_matches(matches):
             match_dict[item_json] = (item, score)
     return [item for item, _ in match_dict.values()]
 
-def process_kg_source(query, jsonld_graph, verbose_mode, fuzzy_threshold, match_history, matches_with_ttl=None):
+def process_kg_source(query, jsonld_graph, verbose_mode, fuzzy_threshold, match_history, matches_with_ttl=None, match_maximum: int = 20):
     """Process query against knowledge graph, return context string and updated matches with TTL."""
     if matches_with_ttl is None:
         matches_with_ttl = []  # Initialize if not provided
@@ -113,13 +113,16 @@ def process_kg_source(query, jsonld_graph, verbose_mode, fuzzy_threshold, match_
         -x[1]  # Negative score for descending order
     ))
 
+    # Trim stored matches to top match_maximum after sorting
+    matches_with_ttl = matches_with_ttl[:match_maximum]
+
     # Log post-deduplication count in Debug mode
     if verbose_mode >= 3:
         click.echo(f"{Fore.YELLOW}DEBUG: Fuzzy matches after deduplication: {len(matched_elements)}{Style.RESET_ALL}")
 
     # Set kg_context to matched elements with positive TTL
     try:
-        active_matches = [match[0] for match in matches_with_ttl if match[2] > 0]
+        active_matches = [match[0] for match in matches_with_ttl if match[2] > 0][:match_maximum]
         kg_context = json.dumps(active_matches) if active_matches else ""
     except Exception as e:
         if verbose_mode >= 2:
@@ -156,7 +159,7 @@ def process_mcp_endpoint_source(query, endpoints, verbose_mode, threshold, match
 def process_data_sources(context, query):
     """Process all data sources and return combined context and matches with TTL."""
     kg_context, kg_matches_with_ttl = process_kg_source(
-        query, context.jsonld_graph, context.verbose_mode, context.fuzzy_threshold, context.match_history, context.context_matches_with_ttl.get("kg", [])
+        query, context.jsonld_graph, context.verbose_mode, context.fuzzy_threshold, context.match_history, context.context_matches_with_ttl.get("kg", []), context.match_maximum
     )
     schema_context, schema_matches_with_ttl = process_schema_source(
         query, None, context.verbose_mode, context.fuzzy_threshold, context.match_history, context.context_matches_with_ttl.get("schema", [])
